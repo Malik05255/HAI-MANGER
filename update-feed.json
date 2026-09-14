@@ -1,13 +1,13 @@
 {
-  "versionCode": 6,
-  "versionName": "0.3.3",
+  "versionCode": 7,
+  "versionName": "0.4.0",
   "apkUrl": "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/HAI-MANAGER.apk",
   "notes": "إصلاح سلسلة التوقيع الدائمة وتحديثات HAI MANAGER الآمنة.",
   "mandatory": false,
   "signatureStable": true,
   "signingCertSha256": "D59B0F985ED8CF4A903938B7904A5F33EDA01E8817E994B6A20D78D164BC2441",
-  "sha256": "B8FEA79B12F5C122C24EB0D145FEF74E232657CC16EC3AEA8E7B01E2AC1FCB63",
+  "sha256": "D9F60D21A0AA8EC8ABA16582696847F8D25FF4CC8633E8E93017E2D16E20D75F",
   "channel": "beta",
-  "publishedAt": "2026-09-14T20:19:20Z",
+  "publishedAt": "2026-09-14T20:31:59Z",
   "catalogVersion": 2
 }
