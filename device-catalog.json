@@ -1,5 +1,5 @@
 {
-  "catalogVersion": 2,
+  "catalogVersion": 3,
   "updatedAt": "2026-09-14",
   "devices": [
     {"brand":"ZTE","model":"MC888","aliases":["MC888"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
@@ -22,17 +22,27 @@
   "verifiedProfiles": [
     {
       "brand": "ZTE",
+      "family": "MC801A/MC888/MC889",
+      "verification": "runtime_api_probe",
+      "actions": ["reboot", "network_mode"],
+      "postVerify": ["network_mode"],
+      "notes": "الأوامر تظهر بعد توفر مفاتيح AD المطلوبة، ويعاد قراءة وضع الشبكة بعد التغيير للتأكد من التطبيق."
+    },
+    {
+      "brand": "ZTE",
       "model": "MC801A",
       "firmware": "BD_UKH3GMC801AV1.0.0B15",
       "actions": ["reboot", "network_mode", "nr5g_band_lock"],
-      "notes": "قفل 5G موثق؛ قفل LTE لا يزال غير مفعّل في HAI MANAGER حتى اكتمال التحقق."
+      "postVerify": ["network_mode", "nr5g_band_lock_when_readable"],
+      "notes": "قفل 5G موثق لهذا Firmware. إذا كانت قيمة القفل قابلة للقراءة يعاد التحقق منها بعد التنفيذ."
     },
     {
       "brand": "Huawei",
       "family": "HiLink",
       "verification": "runtime_api_probe",
-      "actions": ["reboot", "network_mode_auto", "network_mode_lte_only"],
-      "notes": "تظهر الأوامر فقط إذا استجابت SesTokInfo وnet-mode/net-mode-list بالبنية المتوقعة."
+      "actions": ["reboot", "network_mode_auto", "network_mode_lte_only", "wifi_rename_when_available"],
+      "postVerify": ["network_mode", "wifi_rename_when_connection_survives"],
+      "notes": "تظهر الأوامر فقط إذا استجابت SesTokInfo وواجهات net-mode/WLAN بالبنية المتوقعة، وتتم إعادة القراءة بعد التغيير عندما يبقى الاتصال متاحًا."
     }
   ]
 }
