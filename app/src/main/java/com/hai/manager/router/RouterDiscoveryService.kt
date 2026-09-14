@@ -7,7 +7,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.URL
@@ -41,7 +40,7 @@ class RouterDiscoveryService(private val context: Context) {
 
             val passiveBrand = passiveWinner?.takeIf { it.second > 0 }?.first?.brand ?: RouterBrand.UNKNOWN
             val passiveConfidence = passiveWinner?.second ?: 0
-            val active = if (passiveConfidence < 80) activeFingerprint(candidate) else null
+            val active = if (passiveConfidence < 90) activeFingerprint(candidate) else null
             val brand = active?.brand ?: passiveBrand
             val confidence = active?.confidence ?: passiveConfidence
             val evidence = buildString {
@@ -58,9 +57,9 @@ class RouterDiscoveryService(private val context: Context) {
                 pageTitle = detectTitle(rootProbe.body),
                 confidence = confidence,
                 message = when {
-                    active != null -> "تم التعرف على الراوتر عبر واجهة الإدارة"
-                    brand == RouterBrand.UNKNOWN -> "تم العثور على الراوتر وسيتم تحسين التعرف عليه"
-                    else -> "تم التعرف على الراوتر"
+                    active != null -> "تم التعرف على راوتر ${brand.displayName} عبر واجهة الإدارة"
+                    brand == RouterBrand.UNKNOWN -> "تم العثور على الراوتر؛ دعم المرحلة الحالية مخصص لـ Huawei وZTE"
+                    else -> "تم التعرف على راوتر ${brand.displayName}"
                 }
             )
         }
@@ -77,7 +76,7 @@ class RouterDiscoveryService(private val context: Context) {
         val zteDeferred = async {
             runCatching {
                 probe(
-                    "$base/goform/goform_get_cmd_process?isTest=false&cmd=DeviceName,model_name,product_name&multi_data=1",
+                    "$base/goform/goform_get_cmd_process?isTest=false&cmd=DeviceName,model_name,product_name,wa_inner_version&multi_data=1",
                     timeoutMs = 1600
                 )
             }.getOrNull()
@@ -85,18 +84,13 @@ class RouterDiscoveryService(private val context: Context) {
         val huaweiDeferred = async {
             runCatching { probe("$base/api/device/information", timeoutMs = 1600) }.getOrNull()
         }
-        val netgearDeferred = async {
-            runCatching { probe("$base/model.json", timeoutMs = 1800) }.getOrNull()
-        }
 
         val zte = zteDeferred.await()
         val huawei = huaweiDeferred.await()
-        val netgear = netgearDeferred.await()
 
         when {
-            zte?.looksLikeZteApi() == true -> ActiveFingerprint(RouterBrand.ZTE, 96, zte.body)
-            huawei?.looksLikeHuaweiApi() == true -> ActiveFingerprint(RouterBrand.HUAWEI, 96, huawei.body)
-            netgear?.looksLikeNetgearModel() == true -> ActiveFingerprint(RouterBrand.NETGEAR, 98, netgear.body)
+            zte?.looksLikeZteApi() == true -> ActiveFingerprint(RouterBrand.ZTE, 98, zte.body)
+            huawei?.looksLikeHuaweiApi() == true -> ActiveFingerprint(RouterBrand.HUAWEI, 98, huawei.body)
             else -> null
         }
     }
@@ -107,7 +101,7 @@ class RouterDiscoveryService(private val context: Context) {
         connection.readTimeout = timeoutMs
         connection.instanceFollowRedirects = true
         connection.requestMethod = "GET"
-        connection.setRequestProperty("User-Agent", "HAI-MANAGER/0.4")
+        connection.setRequestProperty("User-Agent", "HAI-MANAGER/0.5")
         connection.setRequestProperty("Accept", "application/json, application/xml, text/html, */*")
         return try {
             val code = connection.responseCode
@@ -138,6 +132,7 @@ class RouterDiscoveryService(private val context: Context) {
             "\"devicename\"" in text ||
                 "\"model_name\"" in text ||
                 "\"product_name\"" in text ||
+                "\"wa_inner_version\"" in text ||
                 "\"result\":\"failure\"" in text.replace(" ", "")
             )
     }
@@ -149,24 +144,13 @@ class RouterDiscoveryService(private val context: Context) {
             "<devicename>" in text ||
                 "<productfamily>" in text ||
                 "<serialnumber>" in text ||
-                "<imei>" in text
+                "<imei>" in text ||
+                "<softwareversion>" in text
             )
         val knownAuthError = "<error>" in text && (
             "125002" in text || "125003" in text || "100003" in text
             )
         return responseShape || knownAuthError
-    }
-
-    private fun ProbeResult.looksLikeNetgearModel(): Boolean {
-        if (code == 404) return false
-        val json = runCatching { JSONObject(body) }.getOrNull() ?: return false
-        val general = json.optJSONObject("general")
-        val company = general?.optString("companyName").orEmpty()
-        val deviceName = general?.optString("deviceName").orEmpty()
-        val apiVersion = general?.optString("apiVersion").orEmpty()
-        return company.contains("NETGEAR", true) ||
-            deviceName.contains("Nighthawk", true) ||
-            (apiVersion.isNotBlank() && json.optJSONObject("wwan") != null)
     }
 
     private fun detectTitle(body: String): String? =
@@ -175,12 +159,10 @@ class RouterDiscoveryService(private val context: Context) {
 
     private fun detectModel(body: String): String? {
         val models = listOf(
-            "MC888 Pro", "MC888", "MC801A", "MC889",
-            "H155-381", "H158-381", "B818", "B535", "B525",
-            "FastMile 5G Gateway", "FastMile",
-            "Nighthawk M7 Pro", "Nighthawk M7", "Nighthawk M6 Pro", "Nighthawk M6", "Nighthawk M5",
-            "MR7500", "MR7450", "MR7400", "MR6550", "MR6520G", "MR6520", "MR6500", "MR6450", "MR6220G", "MR6220", "MR6150", "MR6110", "MR5200", "MR5100",
-            "Archer MR600", "Archer NX200", "NR5103E", "DWR-2101"
+            "MC888 Ultra", "MC888 Pro", "MC888D", "MC888", "MC801A", "MC889A", "MC889", "MC7010CA", "MC7010",
+            "MF297D", "MF289F", "MF286D", "MF286R", "MF286", "MF293N",
+            "H158-381", "H155-381", "H138-380", "H122-373", "H112-370", "H312-371",
+            "B818", "B715", "B628", "B612", "B535", "B525", "B315", "B310", "B593"
         )
         return models.firstOrNull { body.contains(it, ignoreCase = true) }
     }

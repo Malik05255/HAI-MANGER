@@ -58,10 +58,10 @@ import androidx.compose.ui.unit.sp
 import com.hai.manager.catalog.CatalogStatus
 import com.hai.manager.catalog.DeviceCatalogRepository
 import com.hai.manager.router.CellularSignal
-import com.hai.manager.router.NetworkMode
 import com.hai.manager.router.RouterAccessStatus
 import com.hai.manager.router.RouterActionResult
 import com.hai.manager.router.RouterActionService
+import com.hai.manager.router.RouterBrand
 import com.hai.manager.router.RouterCapability
 import com.hai.manager.router.RouterDiscoveryService
 import com.hai.manager.router.RouterInspection
@@ -139,7 +139,7 @@ fun HaiManagerApp() {
 private fun AppHeader() {
     Column(Modifier.fillMaxWidth()) {
         Text("HAI MANAGER", fontSize = 25.sp, style = MaterialTheme.typography.titleLarge)
-        Text("إدارة الراوتر بدون تعقيد", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f))
+        Text("Huawei + ZTE • إدارة الراوتر بدون تعقيد", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f))
     }
 }
 
@@ -207,7 +207,7 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(inspection?.device?.model ?: router?.model ?: "الراوتر", style = MaterialTheme.typography.titleLarge)
-                        Text(inspection?.message ?: router?.message ?: "اتصل بشبكة الراوتر ثم ابدأ الفحص")
+                        Text(inspection?.message ?: router?.message ?: "اتصل براوتر Huawei أو ZTE ثم ابدأ الفحص")
                     }
                     Icon(Icons.Outlined.Router, null, Modifier.size(40.dp))
                 }
@@ -227,6 +227,12 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
                         onClick = { context.startActivity(Intent(context, RouterLoginActivity::class.java).putExtra(RouterLoginActivity.EXTRA_URL, url)) },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("تسجيل الدخول إلى الراوتر") }
+                    if (router?.brand == RouterBrand.ZTE || router?.brand == RouterBrand.HUAWEI) {
+                        OutlinedButton(
+                            onClick = { context.startActivity(Intent(context, WifiToolsActivity::class.java).putExtra(WifiToolsActivity.EXTRA_URL, url)) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("إدارة Wi-Fi") }
+                    }
                 }
             }
         }
@@ -240,6 +246,17 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
                 OptionalDetailRow("Hardware", device.hardwareVersion)
                 OptionalDetailRow("WebUI", device.webUiVersion)
                 OptionalDetailRow("WAN IP", device.wanIp)
+            }
+        }
+
+        inspection?.security?.takeIf { it.hasData }?.let { security ->
+            SimpleCard("SIM وقفل الشبكة") {
+                OptionalDetailRow("حالة SIM", security.simState)
+                OptionalDetailRow("حالة PIN", security.pinState)
+                OptionalDetailRow("قفل الشبكة", security.networkLockState)
+                OptionalDetailRow("محاولات الفك المتبقية", security.unlockAttemptsRemaining)
+                OptionalDetailRow("ICCID", security.iccid)
+                OptionalDetailRow("IMSI", security.imsi)
             }
         }
 
@@ -288,7 +305,7 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
         }
 
         SimpleCard("التوافق") {
-            Text("لا يظهر أي أمر تغييري إلا إذا أثبت Adapter أن الـAPI المطلوب متاح. قفل 5G مفعّل حاليًا فقط للـFirmware الموثق لـ ZTE MC801A، وباقي الأجهزة تبقى قراءة فقط حتى توثيقها.")
+            Text("المرحلة الحالية مخصصة لـ Huawei وZTE. لا يظهر أي أمر تغييري إلا بعد إثبات الـAPI والـFirmware، ثم يعاد فحص القيمة بعد التنفيذ متى أمكن.")
         }
     }
 }
@@ -298,7 +315,7 @@ private fun StatusBadge(status: RouterAccessStatus) {
     val label = when (status) {
         RouterAccessStatus.AVAILABLE -> "الإدارة متاحة"
         RouterAccessStatus.AUTH_REQUIRED -> "تسجيل الدخول مطلوب"
-        RouterAccessStatus.UNSUPPORTED -> "الإدارة قيد الإضافة"
+        RouterAccessStatus.UNSUPPORTED -> "غير مدعوم في المرحلة الحالية"
         RouterAccessStatus.FAILED -> "لم تُقرأ التفاصيل"
     }
     Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
@@ -370,15 +387,14 @@ private fun DevicesScreen(context: Context, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         AppHeader()
         Text("قاعدة الأجهزة", style = MaterialTheme.typography.titleLarge)
+        Text("الأولوية الحالية: تعميق دعم Huawei وZTE قبل إضافة أي شركة أخرى.")
         CatalogCard(status, syncing, ::sync)
-        listOf(
-            "ZTE" to "قراءة فعلية + أوامر متدرجة حسب الموديل وFirmware",
-            "Huawei" to "HiLink: قراءة + Reboot + أوضاع موثقة عند توفر API",
-            "Nokia" to "اكتشاف — Adapter الإدارة قيد الإضافة",
-            "Netgear" to "اكتشاف — Adapter الإدارة قيد الإضافة",
-            "TP-Link" to "اكتشاف — Adapter الإدارة قيد الإضافة",
-            "Zyxel / D-Link" to "تعريفات موجودة — الإدارة قيد الإضافة"
-        ).forEach { (name, text) -> SimpleCard(name) { Text(text) } }
+        SimpleCard("ZTE") {
+            Text("MC801A / MC888 / MC889 / MC7010 وعائلات MF286/MF289/MF297: اكتشاف وقراءة شبكة وFirmware وSIM، مع أوامر تدريجية حسب الـFirmware.")
+        }
+        SimpleCard("Huawei") {
+            Text("H155/H158/H122/H112 وعائلات B818/B715/B628/B535/B525: HiLink/WebUI، قراءة الشبكة وSIM وFirmware، وأوامر موثقة عند توفر API.")
+        }
     }
 }
 
@@ -425,7 +441,7 @@ private fun UpdatesScreen(context: Context, modifier: Modifier = Modifier) {
             }
             Button(onClick = { checkNow() }, enabled = !checking, modifier = Modifier.fillMaxWidth()) { Text("البحث عن تحديثات الآن") }
         }
-        Text("قناة التحديث تتحقق كل 6 ساعات. التثبيت فوق النسخة الحالية يتطلب شهادة توقيع ثابتة؛ التطبيق يعرض حالة ذلك بوضوح بدل اعتبار أي فشل في الاتصال أنه أحدث إصدار.")
+        Text("قناة التحديث تتحقق كل 6 ساعات، وتتحقق من SHA-256 وشهادة التوقيع الدائمة قبل فتح مثبت Android.")
     }
 }
 
@@ -433,7 +449,7 @@ private fun UpdatesScreen(context: Context, modifier: Modifier = Modifier) {
 private fun UpdateAvailableCard(context: Context, update: AppUpdate) {
     Text("يتوفر الإصدار ${update.versionName}", style = MaterialTheme.typography.titleMedium)
     if (update.notes.isNotBlank()) Text(update.notes)
-    Text(if (update.signatureStable) "التوقيع ثابت — يمكن التثبيت فوق النسخة الحالية" else "قناة اختبار — التوقيع الثابت غير مفعّل بعد")
+    Text(if (update.signatureStable) "التوقيع ثابت — يمكن التثبيت فوق النسخة الحالية" else "قناة اختبار — التوقيع الثابت غير مفعّل")
     if (update.downloadable) {
         Button(onClick = { ApkUpdateInstaller.downloadAndInstall(context, update) }, modifier = Modifier.fillMaxWidth()) { Text("تنزيل التحديث") }
     } else Text("ملف APK لم يُنشر بعد")

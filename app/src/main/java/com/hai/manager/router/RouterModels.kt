@@ -20,7 +20,7 @@ enum class RouterCapability(val displayName: String) {
     DEVICE_INFO("معلومات الجهاز"), CELLULAR_SIGNAL("إشارة الشبكة"), NETWORK_STATUS("حالة الشبكة"),
     SESSION_COOKIES("جلسة إدارة"), CA_DETAILS("تجميع الترددات CA"), NETWORK_MODE("أوضاع الشبكة"),
     BAND_LOCK("قفل النطاقات"), REBOOT("إعادة التشغيل"), WIFI_SETTINGS("إعدادات Wi-Fi"),
-    FIRMWARE_INFO("معلومات النظام")
+    FIRMWARE_INFO("معلومات النظام"), SIM_SECURITY("حالة SIM وقفل الشبكة")
 }
 
 enum class RouterAccessStatus { AVAILABLE, AUTH_REQUIRED, UNSUPPORTED, FAILED }
@@ -39,6 +39,19 @@ data class RouterDeviceInfo(
     val webUiVersion: String? = null,
     val wanIp: String? = null
 )
+
+data class RouterSecurityInfo(
+    val simState: String? = null,
+    val pinState: String? = null,
+    val networkLockState: String? = null,
+    val unlockAttemptsRemaining: String? = null,
+    val iccid: String? = null,
+    val imsi: String? = null
+) {
+    val hasData: Boolean
+        get() = listOf(simState, pinState, networkLockState, unlockAttemptsRemaining, iccid, imsi)
+            .any { !it.isNullOrBlank() }
+}
 
 data class CellularSignal(
     val networkType: String? = null,
@@ -81,6 +94,7 @@ data class RouterInspection(
     val accessStatus: RouterAccessStatus,
     val device: RouterDeviceInfo? = null,
     val signal: CellularSignal? = null,
+    val security: RouterSecurityInfo? = null,
     val wifi: RouterWifiInfo? = null,
     val capabilities: Set<RouterCapability> = emptySet(),
     val supportedNetworkModes: Set<NetworkMode> = emptySet(),
@@ -100,7 +114,7 @@ object ZteRouterAdapter : RouterAdapter {
         val text = (page + headers.values.joinToString(" ")).lowercase()
         return when {
             "zte" in text -> 100
-            "mc888" in text || "mc801" in text || "mc889" in text -> 95
+            listOf("mc888", "mc801", "mc889", "mc7010", "mf286", "mf289", "mf297").any { it in text } -> 95
             "goform" in text -> 70
             else -> 0
         }
@@ -115,29 +129,13 @@ object HuaweiRouterAdapter : RouterAdapter {
             "huawei" in text -> 100
             "hilink" in text -> 90
             "api/device/information" in text -> 80
+            listOf("h155", "h158", "h122", "h112", "b818", "b535", "b525").any { it in text } -> 85
             else -> 0
         }
     }
 }
 
-object NokiaRouterAdapter : RouterAdapter {
-    override val brand = RouterBrand.NOKIA
-    override fun confidence(page: String, headers: Map<String, String>) =
-        if ((page + headers.values.joinToString(" ")).contains("nokia", true)) 100 else 0
-}
-object NetgearRouterAdapter : RouterAdapter {
-    override val brand = RouterBrand.NETGEAR
-    override fun confidence(page: String, headers: Map<String, String>) =
-        if ((page + headers.values.joinToString(" ")).contains("netgear", true)) 100 else 0
-}
-object TpLinkRouterAdapter : RouterAdapter {
-    override val brand = RouterBrand.TP_LINK
-    override fun confidence(page: String, headers: Map<String, String>): Int {
-        val text = (page + headers.values.joinToString(" ")).lowercase()
-        return if ("tp-link" in text || "tplink" in text) 100 else 0
-    }
-}
-
+/** المرحلة الأولى من HAI MANAGER تركز على Huawei وZTE فقط. */
 object RouterAdapters {
-    val all: List<RouterAdapter> = listOf(ZteRouterAdapter, HuaweiRouterAdapter, NokiaRouterAdapter, NetgearRouterAdapter, TpLinkRouterAdapter)
+    val all: List<RouterAdapter> = listOf(ZteRouterAdapter, HuaweiRouterAdapter)
 }

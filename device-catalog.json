@@ -1,58 +1,54 @@
 {
-  "catalogVersion": 5,
+  "catalogVersion": 6,
   "updatedAt": "2026-09-14",
+  "focus": ["ZTE", "Huawei"],
   "devices": [
-    {"brand":"ZTE","model":"MC888","aliases":["MC888"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"ZTE","model":"MC888 Pro","aliases":["MC888 Pro"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"ZTE","model":"MC801A","aliases":["MC801A"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"ZTE","model":"MC889","aliases":["MC889"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"Huawei","model":"H155-381","aliases":["H155-381"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"Huawei","model":"H158-381","aliases":["H158-381"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"Huawei","model":"B818","aliases":["B818"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"Huawei","model":"B535","aliases":["B535"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"Huawei","model":"B525","aliases":["B525"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"Nokia","model":"FastMile 5G Gateway","aliases":["FastMile"],"discovery":true,"firmware":"official_only","networkUnlock":"unsupported"},
-    {"brand":"Netgear","model":"Nighthawk M5","aliases":["Nighthawk M5","MR5100","MR5100C","MR5200"],"discovery":true,"diagnostics":"model_json","firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"Netgear","model":"Nighthawk M6","aliases":["Nighthawk M6","MR6110","MR6150","MR6220","MR6220G"],"discovery":true,"diagnostics":"model_json","firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"Netgear","model":"Nighthawk M6 Pro","aliases":["Nighthawk M6 Pro","MR6450","MR6500","MR6520","MR6520G","MR6550"],"discovery":true,"diagnostics":"model_json","firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"Netgear","model":"Nighthawk M7","aliases":["Nighthawk M7","MH7150"],"discovery":true,"diagnostics":"model_json","firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"Netgear","model":"Nighthawk M7 Pro","aliases":["Nighthawk M7 Pro","MR7400","MR7450","MR7500"],"discovery":true,"diagnostics":"model_json","firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"TP-Link","model":"Archer MR600","aliases":["MR600"],"discovery":true,"firmware":"official_only","networkUnlock":"unsupported"},
-    {"brand":"TP-Link","model":"Archer NX200","aliases":["NX200"],"discovery":true,"firmware":"official_only","networkUnlock":"unsupported"},
-    {"brand":"Zyxel","model":"NR5103E","aliases":["NR5103E"],"discovery":true,"firmware":"official_only","networkUnlock":"unsupported"},
-    {"brand":"D-Link","model":"DWR-2101","aliases":["DWR-2101"],"discovery":true,"firmware":"official_only","networkUnlock":"unsupported"}
+    {"brand":"ZTE","model":"MC888 Ultra","aliases":["MC888 Ultra"],"discovery":true,"generation":"5G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC888 Pro","aliases":["MC888 Pro"],"discovery":true,"generation":"5G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC888","aliases":["MC888","MC888D"],"discovery":true,"generation":"5G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC801A","aliases":["MC801A"],"discovery":true,"generation":"5G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC889","aliases":["MC889","MC889A"],"discovery":true,"generation":"5G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC7010","aliases":["MC7010","MC7010CA"],"discovery":true,"generation":"5G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MF297D","aliases":["MF297D"],"discovery":true,"generation":"4G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MF289F","aliases":["MF289F"],"discovery":true,"generation":"4G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MF286","aliases":["MF286","MF286D","MF286R"],"discovery":true,"generation":"4G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H158-381","aliases":["H158-381"],"discovery":true,"generation":"5G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H155-381","aliases":["H155-381"],"discovery":true,"generation":"5G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H138-380","aliases":["H138-380"],"discovery":true,"generation":"5G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H122-373","aliases":["H122-373"],"discovery":true,"generation":"5G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H112-370","aliases":["H112-370"],"discovery":true,"generation":"5G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B818","aliases":["B818"],"discovery":true,"generation":"4G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B715","aliases":["B715"],"discovery":true,"generation":"4G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B628","aliases":["B628"],"discovery":true,"generation":"4G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B535","aliases":["B535"],"discovery":true,"generation":"4G","firmware":"official_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B525","aliases":["B525"],"discovery":true,"generation":"4G","firmware":"official_only","networkUnlock":"diagnostics_only"}
   ],
   "verifiedProfiles": [
     {
-      "brand": "ZTE",
-      "family": "MC801A/MC888/MC889",
-      "verification": "runtime_api_probe",
-      "actions": ["reboot", "network_mode"],
-      "postVerify": ["network_mode"],
-      "notes": "الأوامر تظهر بعد توفر مفاتيح AD المطلوبة، ويعاد قراءة وضع الشبكة بعد التغيير للتأكد من التطبيق."
+      "brand":"ZTE",
+      "family":"MC801A/MC888/MC889/MC7010",
+      "verification":"runtime_api_probe",
+      "read":["device_info","signal","ca","bands","sim_state","network_lock_state","unlock_attempts_when_exposed"],
+      "actions":["reboot","network_mode"],
+      "postVerify":["network_mode"],
+      "notes":"الأوامر تظهر فقط بعد توفر مفاتيح AD المطلوبة من WebUI وتتم إعادة القراءة بعد التغيير."
     },
     {
-      "brand": "ZTE",
-      "model": "MC801A",
-      "firmware": "BD_UKH3GMC801AV1.0.0B15",
-      "actions": ["reboot", "network_mode", "nr5g_band_lock"],
-      "postVerify": ["network_mode", "nr5g_band_lock_when_readable"],
-      "notes": "قفل 5G موثق لهذا Firmware. إذا كانت قيمة القفل قابلة للقراءة يعاد التحقق منها بعد التنفيذ."
+      "brand":"ZTE",
+      "model":"MC801A",
+      "firmware":"BD_UKH3GMC801AV1.0.0B15",
+      "actions":["reboot","network_mode","nr5g_band_lock"],
+      "postVerify":["network_mode","nr5g_band_lock_when_readable"],
+      "notes":"قفل 5G موثق لهذا Firmware فقط في المرحلة الحالية."
     },
     {
-      "brand": "Huawei",
-      "family": "HiLink",
-      "verification": "runtime_api_probe",
-      "actions": ["reboot", "network_mode_auto", "network_mode_lte_only", "wifi_rename_when_available"],
-      "postVerify": ["network_mode", "wifi_rename_when_connection_survives"],
-      "notes": "تظهر الأوامر فقط إذا استجابت SesTokInfo وواجهات net-mode/WLAN بالبنية المتوقعة، وتتم إعادة القراءة بعد التغيير عندما يبقى الاتصال متاحًا."
-    },
-    {
-      "brand": "Netgear",
-      "family": "Nighthawk M5/M6/M7",
-      "verification": "model_json_after_webui_login",
-      "actions": ["read_device_info", "read_signal", "read_ca", "read_band", "read_cell", "read_official_firmware_update_state"],
-      "notes": "قراءة تشخيصية فقط عبر model.json بعد تسجيل الدخول، بما فيها حالة FOTA عند توفرها. لا توجد أوامر تغيير أو تثبيت Firmware مفعلة حتى توثيق واجهة الكتابة لكل Firmware."
+      "brand":"Huawei",
+      "family":"HiLink/WebUI",
+      "verification":"runtime_api_probe",
+      "read":["device_info","signal","plmn","firmware","sim_pin_state","network_lock_state_when_exposed"],
+      "actions":["reboot","network_mode_auto","network_mode_lte_only","wifi_rename_when_available"],
+      "postVerify":["network_mode","wifi_rename_when_connection_survives"],
+      "notes":"لا يتم إرسال أوضاع 5G أو Band Lock على Huawei قبل توثيق بنية API الخاصة بالـFirmware."
     }
   ]
 }

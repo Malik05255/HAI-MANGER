@@ -3,7 +3,6 @@ package com.hai.manager.router
 import android.webkit.CookieManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -46,7 +45,7 @@ class RouterHttpClient(private val baseUrl: String) {
         connection.readTimeout = 3500
         connection.instanceFollowRedirects = true
         connection.requestMethod = method
-        connection.setRequestProperty("User-Agent", "HAI-MANAGER/0.4")
+        connection.setRequestProperty("User-Agent", "HAI-MANAGER/0.5")
         connection.setRequestProperty("Accept", "application/json, application/xml, text/xml, text/plain, */*")
         connection.setRequestProperty("Referer", baseUrl.trimEnd('/') + "/")
         connection.setRequestProperty("X-Requested-With", "XMLHttpRequest")
@@ -116,7 +115,6 @@ class RouterInspectorService {
         val adapter = when (snapshot.brand) {
             RouterBrand.ZTE -> ZteOperationalAdapter
             RouterBrand.HUAWEI -> HuaweiOperationalAdapter
-            RouterBrand.NETGEAR -> NetgearOperationalAdapter
             else -> null
         } ?: return RouterInspection(
             snapshot = snapshot,
@@ -125,7 +123,7 @@ class RouterInspectorService {
                 manufacturer = snapshot.brand.displayName.takeIf { snapshot.brand != RouterBrand.UNKNOWN },
                 model = snapshot.model
             ),
-            message = "تم التعرف على الراوتر، لكن القراءة المباشرة لهذا النوع لم تُضف بعد"
+            message = "دعم المرحلة الحالية مخصص لراوترات Huawei وZTE"
         )
 
         return runCatching { adapter.inspect(RouterHttpClient(baseUrl), snapshot) }
@@ -140,12 +138,14 @@ object ZteOperationalAdapter : OperationalRouterAdapter {
 
     private val commands = listOf(
         "DeviceName", "model_name", "product_name", "SerialNumber", "serial_number", "imei",
-        "wa_inner_version", "cr_version", "RD", "hardware_version", "web_version",
-        "network_type", "network_type_ex", "network_provider", "net_select", "current_network_mode",
+        "wa_inner_version", "cr_version", "RD", "hardware_version", "web_version", "wan_ipaddr",
+        "network_type", "network_type_ex", "network_provider", "net_select", "current_network_mode", "BearerPreference",
         "lte_rsrp", "lte_rsrq", "lte_snr", "lte_rssi", "Z5g_rsrp", "Z5g_rsrq", "Z5g_SINR",
         "nr5g_rsrp", "nr5g_rsrq", "nr5g_snr", "lte_ca_pcell_band", "lte_ca_scell_band",
-        "lte_multi_ca_scell_info", "nr5g_band", "nr5g_action_band", "wan_active_band",
-        "wan_active_channel", "nr5g_action_channel", "cell_id", "pci", "lte_pci", "wan_ipaddr"
+        "lte_multi_ca_scell_info", "nr5g_band", "nr5g_action_band", "nr5g_band_mask", "wan_active_band",
+        "wan_active_channel", "nr5g_action_channel", "cell_id", "pci", "lte_pci",
+        "sim_state", "pin_status", "network_lock", "network_lock_status", "network_unlock_remain_count",
+        "unlock_nck_time", "iccid", "imsi"
     ).joinToString(",")
 
     override suspend fun inspect(client: RouterHttpClient, snapshot: RouterSnapshot): RouterInspection {
@@ -165,13 +165,22 @@ object ZteOperationalAdapter : OperationalRouterAdapter {
             wanIp = json.firstString("wan_ipaddr")
         )
 
+        val security = RouterSecurityInfo(
+            simState = json.firstString("sim_state"),
+            pinState = json.firstString("pin_status"),
+            networkLockState = json.firstString("network_lock_status", "network_lock"),
+            unlockAttemptsRemaining = json.firstString("network_unlock_remain_count", "unlock_nck_time"),
+            iccid = json.firstString("iccid"),
+            imsi = json.firstString("imsi")
+        )
+
         val primaryBand = json.firstString("lte_ca_pcell_band", "wan_active_band")
         val secondaryBands = parseZteSecondaryBands(json.firstString("lte_multi_ca_scell_info"), json.firstString("lte_ca_scell_band"))
         val nrBand = json.firstString("nr5g_band", "nr5g_action_band")
         val bands = bandValues(primaryBand, secondaryBands.joinToString(","), nrBand)
         val signal = CellularSignal(
             networkType = json.firstString("network_type_ex", "network_type"),
-            networkPreference = json.firstString("net_select", "current_network_mode"),
+            networkPreference = json.firstString("BearerPreference", "net_select", "current_network_mode"),
             operatorName = json.firstString("network_provider"),
             rsrp = json.firstString("Z5g_rsrp", "nr5g_rsrp", "lte_rsrp").cleanMetric(),
             rsrq = json.firstString("Z5g_rsrq", "nr5g_rsrq", "lte_rsrq").cleanMetric(),
@@ -201,13 +210,18 @@ object ZteOperationalAdapter : OperationalRouterAdapter {
             RouterCapability.FIRMWARE_INFO,
             RouterCapability.CA_DETAILS
         )
+        if (security.hasData) capabilities += RouterCapability.SIM_SECURITY
+
         val model = device.model.orEmpty()
-        val hasActionSeed = json.firstString("wa_inner_version") != null && json.firstString("cr_version") != null && json.firstString("RD") != null
-        if (hasActionSeed && model.isKnownZte5g()) {
+        val hasActionSeed = json.firstString("wa_inner_version") != null &&
+            json.firstString("cr_version") != null && json.firstString("RD") != null
+        if (hasActionSeed && model.isKnownZteManagedFamily()) {
             capabilities += RouterCapability.REBOOT
             capabilities += RouterCapability.NETWORK_MODE
         }
-        if (model.contains("MC801A", ignoreCase = true) && device.firmwareVersion.orEmpty().contains("BD_UKH3GMC801AV1.0.0B15", ignoreCase = true)) {
+        if (model.contains("MC801A", ignoreCase = true) &&
+            device.firmwareVersion.orEmpty().contains("BD_UKH3GMC801AV1.0.0B15", ignoreCase = true)
+        ) {
             capabilities += RouterCapability.BAND_LOCK
         }
 
@@ -216,9 +230,12 @@ object ZteOperationalAdapter : OperationalRouterAdapter {
             accessStatus = RouterAccessStatus.AVAILABLE,
             device = device,
             signal = signal.takeIf { it.hasData },
+            security = security.takeIf { it.hasData },
             capabilities = capabilities,
-            supportedNetworkModes = if (RouterCapability.NETWORK_MODE in capabilities) {
+            supportedNetworkModes = if (RouterCapability.NETWORK_MODE in capabilities && model.isKnownZte5gFamily()) {
                 setOf(NetworkMode.AUTO, NetworkMode.LTE_ONLY, NetworkMode.NR_LTE, NetworkMode.NR_ONLY)
+            } else if (RouterCapability.NETWORK_MODE in capabilities) {
+                setOf(NetworkMode.AUTO, NetworkMode.LTE_ONLY)
             } else emptySet(),
             message = "تمت قراءة بيانات ZTE مباشرة من الراوتر"
         )
@@ -246,6 +263,10 @@ object HuaweiOperationalAdapter : OperationalRouterAdapter {
     override suspend fun inspect(client: RouterHttpClient, snapshot: RouterSnapshot): RouterInspection {
         val infoResponse = client.get("/api/device/information")
         val signalResponse = client.get("/api/device/signal")
+        val statusResponse = runCatching { client.get("/api/monitoring/status") }.getOrNull()
+        val plmnResponse = runCatching { client.get("/api/net/current-plmn") }.getOrNull()
+        val pinResponse = runCatching { client.get("/api/pin/status") }.getOrNull()
+
         if (requiresHuaweiAuth(infoResponse) && requiresHuaweiAuth(signalResponse)) {
             return RouterInspection(
                 snapshot = snapshot,
@@ -268,10 +289,25 @@ object HuaweiOperationalAdapter : OperationalRouterAdapter {
             webUiVersion = xmlValue(infoResponse.body, "WebUIVersion"),
             wanIp = xmlValue(infoResponse.body, "WanIPAddress", "wan_ip_address")
         )
+
+        val security = RouterSecurityInfo(
+            simState = pinResponse?.body?.let { xmlValue(it, "SimState") }
+                ?: statusResponse?.body?.let { xmlValue(it, "SimStatus") },
+            pinState = pinResponse?.body?.let { xmlValue(it, "PinOptState", "SimPinState") },
+            networkLockState = infoResponse.body.let { xmlValue(it, "SimLock", "SimlockStatus", "NetworkLock") },
+            unlockAttemptsRemaining = pinResponse?.body?.let { xmlValue(it, "SimPinTimes", "PinTimes") },
+            iccid = xmlValue(infoResponse.body, "Iccid", "ICCID"),
+            imsi = xmlValue(infoResponse.body, "Imsi", "IMSI")
+        )
+
         val band = xmlValue(signalResponse.body, "band", "lteband")
+        val operator = plmnResponse?.body?.let { xmlValue(it, "FullName", "ShortName", "Numeric") }
+        val networkType = xmlValue(signalResponse.body, "mode", "workmode")
+            ?: statusResponse?.body?.let { xmlValue(it, "CurrentNetworkTypeEx", "CurrentNetworkType") }
         val signal = CellularSignal(
-            networkType = xmlValue(signalResponse.body, "mode", "workmode"),
+            networkType = networkType,
             networkPreference = modeResponse?.body?.let { xmlValue(it, "NetworkMode") },
+            operatorName = operator,
             rsrp = xmlValue(signalResponse.body, "rsrp").cleanMetric(),
             rsrq = xmlValue(signalResponse.body, "rsrq").cleanMetric(),
             sinr = xmlValue(signalResponse.body, "sinr").cleanMetric(),
@@ -285,7 +321,7 @@ object HuaweiOperationalAdapter : OperationalRouterAdapter {
             nrarfcn = xmlValue(signalResponse.body, "nrarfcn")
         )
 
-        val hasData = listOf(device.model, device.serialNumber, device.imei, device.firmwareVersion, signal.rsrp)
+        val hasData = listOf(device.model, device.serialNumber, device.imei, device.firmwareVersion, signal.rsrp, signal.networkType)
             .any { !it.isNullOrBlank() }
         if (!hasData) {
             return RouterInspection(
@@ -304,11 +340,15 @@ object HuaweiOperationalAdapter : OperationalRouterAdapter {
             RouterCapability.FIRMWARE_INFO,
             RouterCapability.CA_DETAILS
         )
+        if (security.hasData) capabilities += RouterCapability.SIM_SECURITY
+
         val tokenProbe = runCatching { client.get("/api/webserver/SesTokInfo") }.getOrNull()
         if (tokenProbe?.successful == true && xmlValue(tokenProbe.body, "TokInfo") != null) {
             capabilities += RouterCapability.REBOOT
         }
-        if (modeResponse?.successful == true && modeListResponse?.successful == true && xmlValue(modeResponse.body, "NetworkMode") != null) {
+        if (modeResponse?.successful == true && modeListResponse?.successful == true &&
+            xmlValue(modeResponse.body, "NetworkMode") != null
+        ) {
             capabilities += RouterCapability.NETWORK_MODE
         }
 
@@ -316,10 +356,6 @@ object HuaweiOperationalAdapter : OperationalRouterAdapter {
         if (RouterCapability.NETWORK_MODE in capabilities) {
             supportedModes += NetworkMode.AUTO
             supportedModes += NetworkMode.LTE_ONLY
-            val modeList = modeListResponse?.body.orEmpty().lowercase()
-            if ("5g" in modeList || "nr" in modeList) {
-                supportedModes += NetworkMode.NR_LTE
-            }
         }
 
         return RouterInspection(
@@ -327,120 +363,10 @@ object HuaweiOperationalAdapter : OperationalRouterAdapter {
             accessStatus = RouterAccessStatus.AVAILABLE,
             device = device,
             signal = signal.takeIf { it.hasData },
+            security = security.takeIf { it.hasData },
             capabilities = capabilities,
             supportedNetworkModes = supportedModes,
             message = "تمت قراءة بيانات Huawei مباشرة من الراوتر"
-        )
-    }
-}
-
-object NetgearOperationalAdapter : OperationalRouterAdapter {
-    override val brand = RouterBrand.NETGEAR
-
-    override suspend fun inspect(client: RouterHttpClient, snapshot: RouterSnapshot): RouterInspection {
-        val response = client.get("/model.json")
-        val json = runCatching { JSONObject(response.body) }.getOrNull()
-        if (response.code == 401 || response.code == 403 || (json == null && looksLikeLogin(response.body))) {
-            return RouterInspection(
-                snapshot = snapshot,
-                accessStatus = RouterAccessStatus.AUTH_REQUIRED,
-                device = RouterDeviceInfo(manufacturer = "NETGEAR", model = snapshot.model),
-                capabilities = setOf(RouterCapability.SESSION_COOKIES),
-                message = "سجّل الدخول إلى Netgear WebUI ثم أعد الفحص لقراءة model.json"
-            )
-        }
-
-        if (json == null) {
-            return RouterInspection(
-                snapshot = snapshot,
-                accessStatus = RouterAccessStatus.FAILED,
-                device = RouterDeviceInfo(manufacturer = "NETGEAR", model = snapshot.model),
-                message = "تم العثور على Netgear لكن model.json لم يُقرأ بصيغة JSON"
-            )
-        }
-
-        val model = json.pathString("general.deviceName", "device.deviceName", "deviceName") ?: snapshot.model
-        val firmware = json.pathString(
-            "general.FWversion", "general.fwVersion", "device.FWversion", "FWversion", "fwVersion"
-        )
-        val device = RouterDeviceInfo(
-            manufacturer = json.pathString("general.companyName", "companyName") ?: "NETGEAR",
-            model = model,
-            serialNumber = json.pathString("general.serialNumber", "device.serialNumber", "serialNumber"),
-            imei = json.pathString("wwan.imei", "general.imei", "imei"),
-            firmwareVersion = firmware,
-            hardwareVersion = json.pathString("general.hardwareVersion", "device.hardwareVersion", "hardwareVersion"),
-            webUiVersion = json.pathString("general.apiVersion", "apiVersion"),
-            wanIp = json.pathString("wwan.IP", "wwan.ip", "wwan.ipv4Addr")
-        )
-
-        val lteRsrp = json.pathString("wwan.signalStrength.rsrp").cleanNetgearMetric()
-        val lteRsrq = json.pathString("wwan.signalStrength.rsrq").cleanNetgearMetric()
-        val lteSinr = json.pathString("wwan.signalStrength.sinr").cleanNetgearMetric()
-        val nrRsrp = json.pathString("wwan.signalStrength.nr5gRsrp").cleanNetgearMetric()
-        val nrRsrq = json.pathString("wwan.signalStrength.nr5gRsrq").cleanNetgearMetric()
-        val nrSinr = json.pathString("wwan.signalStrength.nr5gSinr").cleanNetgearMetric()
-        val primaryBand = json.pathString("wwanadv.curBand")
-        val caBands = extractNetgearBands(json)
-        val sccCount = json.pathString("wwan.ca.SCCcount")?.toIntOrNull() ?: 0
-
-        val signal = CellularSignal(
-            networkType = json.pathString("wwan.currentPSserviceType", "wwan.connectionText", "wwan.connection"),
-            networkPreference = json.currentNetgearBandRegion(),
-            operatorName = json.pathString("wwan.networkName", "wwan.operatorName"),
-            rsrp = nrRsrp ?: lteRsrp,
-            rsrq = nrRsrq ?: lteRsrq,
-            sinr = nrSinr ?: lteSinr,
-            rssi = json.pathString("wwan.signalStrength.rssi").cleanNetgearMetric(),
-            bands = (listOfNotNull(primaryBand) + caBands).distinct(),
-            primaryBand = primaryBand,
-            secondaryBands = caBands.filterNot { it.equals(primaryBand, true) },
-            nrBand = caBands.firstOrNull { it.contains("NR", true) || it.startsWith("N", true) },
-            carrierAggregation = sccCount > 0 || caBands.size > 1,
-            cellId = json.pathString("wwanadv.cellId"),
-            pci = json.pathString("wwanadv.primScode", "wwan.pci"),
-            earfcn = json.pathString("wwanadv.chanId"),
-            nrarfcn = json.pathString("wwan.nr5gChanId", "wwanadv.nr5gChanId")
-        )
-
-        val hasData = listOf(device.model, device.firmwareVersion, signal.networkType, signal.rsrp, signal.primaryBand)
-            .any { !it.isNullOrBlank() }
-        if (!hasData) {
-            return RouterInspection(
-                snapshot = snapshot,
-                accessStatus = RouterAccessStatus.FAILED,
-                device = device,
-                message = "Netgear استجاب، لكن model.json الحالي لا يحتوي حقول التشخيص المعروفة"
-            )
-        }
-
-        val fotaAvailable = json.pathString("fota.fwupdater.available", "fota.available")
-        val fotaState = json.pathString("fota.fwupdater.state", "fota.state")
-        val fotaDescription = json.pathString("fota.fwupdater.description", "fota.description")
-        val updateAvailable = fotaAvailable?.trim()?.lowercase() in setOf("1", "true", "yes", "available")
-        val firmwareStatus = when {
-            updateAvailable -> buildString {
-                append(" • يوجد تحديث Firmware رسمي متاح")
-                if (!fotaDescription.isNullOrBlank()) append(": ").append(fotaDescription)
-            }
-            !fotaState.isNullOrBlank() -> " • حالة تحديث Firmware: $fotaState"
-            else -> ""
-        }
-
-        return RouterInspection(
-            snapshot = snapshot,
-            accessStatus = RouterAccessStatus.AVAILABLE,
-            device = device,
-            signal = signal.takeIf { it.hasData },
-            capabilities = setOf(
-                RouterCapability.DEVICE_INFO,
-                RouterCapability.CELLULAR_SIGNAL,
-                RouterCapability.NETWORK_STATUS,
-                RouterCapability.SESSION_COOKIES,
-                RouterCapability.FIRMWARE_INFO,
-                RouterCapability.CA_DETAILS
-            ),
-            message = "تمت قراءة تشخيص Netgear Nighthawk من model.json — وضع القراءة فقط$firmwareStatus"
         )
     }
 }
@@ -451,59 +377,6 @@ private fun JSONObject.firstString(vararg keys: String): String? {
         if (value.isMeaningful()) return value
     }
     return null
-}
-
-private fun JSONObject.pathString(vararg paths: String): String? {
-    for (path in paths) {
-        var current: Any? = this
-        for (part in path.split('.')) {
-            current = (current as? JSONObject)?.opt(part)
-            if (current == null || current == JSONObject.NULL) break
-        }
-        val value = when (current) {
-            is String -> current.trim()
-            is Number, is Boolean -> current.toString()
-            else -> null
-        }
-        if (value?.isMeaningful() == true) return value
-    }
-    return null
-}
-
-private fun JSONObject.currentNetgearBandRegion(): String? {
-    val regions = optJSONObject("wwan")?.optJSONArray("bandRegion") ?: optJSONArray("bandRegion") ?: return null
-    for (i in 0 until regions.length()) {
-        val entry = regions.optJSONObject(i) ?: continue
-        if (entry.optBoolean("current", false)) {
-            return entry.optString("name").takeIf { it.isMeaningful() }
-        }
-    }
-    return null
-}
-
-private fun extractNetgearBands(root: JSONObject): List<String> {
-    val wwan = root.optJSONObject("wwan") ?: return emptyList()
-    val values = mutableListOf<String>()
-    fun collect(array: JSONArray?) {
-        if (array == null) return
-        for (i in 0 until array.length()) {
-            val item = array.optJSONObject(i) ?: continue
-            listOf("band", "lteBand", "bandName", "freqBand", "name").forEach { key ->
-                item.optString(key).trim().takeIf { it.isMeaningful() }?.let { values += it }
-            }
-        }
-    }
-    collect(wwan.optJSONObject("ca")?.optJSONArray("SCClist"))
-    collect(wwan.optJSONArray("lteBandInfo"))
-    collect(wwan.optJSONArray("nr5gBandInfo"))
-    return values.distinct()
-}
-
-private fun String?.cleanNetgearMetric(): String? {
-    val value = this?.trim()?.takeIf { it.isMeaningful() } ?: return null
-    val numeric = Regex("-?\\d+(?:\\.\\d+)?").find(value)?.value?.toDoubleOrNull()
-    if (numeric != null && numeric <= -300) return null
-    return value
 }
 
 private fun String?.cleanMetric(): String? = this?.trim()?.takeIf { it.isMeaningful() }
@@ -547,5 +420,8 @@ private fun requiresHuaweiAuth(response: RouterHttpResponse): Boolean {
     return "125002" in body || "125003" in body || "100003" in body
 }
 
-private fun String.isKnownZte5g(): Boolean =
-    contains("MC801A", true) || contains("MC888", true) || contains("MC889", true)
+private fun String.isKnownZte5gFamily(): Boolean =
+    contains("MC801", true) || contains("MC888", true) || contains("MC889", true) || contains("MC7010", true)
+
+private fun String.isKnownZteManagedFamily(): Boolean =
+    isKnownZte5gFamily() || contains("MF286", true) || contains("MF289", true) || contains("MF297", true)
