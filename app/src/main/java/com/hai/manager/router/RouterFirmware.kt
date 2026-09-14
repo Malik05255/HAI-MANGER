@@ -26,8 +26,18 @@ data class FirmwareCandidate(
     val sha256: String? = null
 )
 
+data class FirmwareFinding(
+    val version: String,
+    val sourceLabel: String,
+    val trustLabel: String,
+    val statusLabel: String,
+    val summaryArabic: String,
+    val sourceUrl: String? = null
+)
+
 data class FirmwareSearchResult(
     val candidate: FirmwareCandidate? = null,
+    val findings: List<FirmwareFinding> = emptyList(),
     val message: String
 )
 
@@ -64,13 +74,14 @@ class RouterFirmwareService {
             }
 
             FirmwareSearchSource.COMPANIES -> {
-                onProgress(32, "تحديث قاعدة التوافق")
+                onProgress(32, "تحديث قاعدة المصادر")
                 delay(150)
                 onProgress(55, "البحث في تحديثات الشركات")
                 val result = searchCompanyCatalog(inspection, catalogJson)
-                onProgress(78, "التحقق من التوافق")
+                onProgress(78, "تصنيف النتائج")
                 delay(120)
-                onProgress(100, if (result.candidate != null) "تم العثور على تحديث" else "اكتمل البحث")
+                val foundAnything = result.candidate != null || result.findings.isNotEmpty()
+                onProgress(100, if (foundAnything) "تم العثور على نتائج" else "اكتمل البحث")
                 result
             }
         }
@@ -253,59 +264,90 @@ class RouterFirmwareService {
         if (catalogJson.isNullOrBlank()) return FirmwareSearchResult(message = "تعذر تحميل قاعدة تحديثات الشركات")
         val root = runCatching { JSONObject(catalogJson) }.getOrNull()
             ?: return FirmwareSearchResult(message = "قاعدة تحديثات الشركات غير صالحة")
-        val updates = root.optJSONArray("firmwareUpdates")
-            ?: return FirmwareSearchResult(message = "لا توجد تحديثات شركات موثقة لهذا الراوتر حاليًا")
 
         val brand = inspection.snapshot.brand.displayName
         val model = inspection.device?.model.orEmpty()
         val hardware = inspection.device?.hardwareVersion.orEmpty()
         val current = inspection.device?.firmwareVersion.orEmpty()
 
-        for (index in 0 until updates.length()) {
-            val item = updates.optJSONObject(index) ?: continue
-            if (!item.optString("brand").equals(brand, true)) continue
-            val modelMatch = item.optString("modelContains")
-            if (modelMatch.isNotBlank() && !model.contains(modelMatch, true)) continue
-            val hardwareMatch = item.optString("hardwareContains")
-            if (hardwareMatch.isNotBlank() && !hardware.contains(hardwareMatch, true)) continue
-            val currentMatch = item.optString("currentFirmwareContains")
-            if (currentMatch.isNotBlank() && !current.contains(currentMatch, true)) continue
+        val findings = mutableListOf<FirmwareFinding>()
+        root.optJSONArray("firmwareFindings")?.let { array ->
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                if (!item.optString("brand").equals(brand, true)) continue
+                val modelMatch = item.optString("modelContains")
+                if (modelMatch.isNotBlank() && !model.contains(modelMatch, true)) continue
+                val currentMatch = item.optString("currentFirmwareContains")
+                if (currentMatch.isNotBlank() && !current.contains(currentMatch, true)) continue
 
-            val version = item.optString("version").trim()
-            if (version.isBlank() || version.equals(current, true)) continue
-            val url = item.optString("url").takeIf { it.startsWith("https://") }
-            val sha256 = item.optString("sha256").takeIf { it.matches(Regex("[A-Fa-f0-9]{64}")) }
-            val installMode = item.optString("installMode", "direct_package")
-            val verified = item.optBoolean("verified", false)
-            val installable = verified && when (installMode.lowercase()) {
-                "huawei_ota" -> true
-                "direct_package" -> false // Requires a signed model-specific flashing adapter before enabling.
-                else -> false
-            }
-
-            return FirmwareSearchResult(
-                candidate = FirmwareCandidate(
-                    currentVersion = current,
-                    version = version,
-                    size = item.optString("size").takeIf { it.isNotBlank() },
-                    source = FirmwareSearchSource.COMPANIES,
-                    sourceLabel = item.optString("company", "تحديث شركة"),
+                findings += FirmwareFinding(
+                    version = item.optString("version", "غير محدد"),
+                    sourceLabel = item.optString("source", "مصدر خارجي"),
+                    trustLabel = item.optString("trust", "غير مصنف"),
+                    statusLabel = item.optString("status", "للمراجعة"),
                     summaryArabic = item.optString("summaryArabic").takeIf { it.isNotBlank() }
-                        ?: "تحديث شركة موثق في قاعدة HAI MANAGER ومتوافق مع بيانات هذا الراوتر.",
-                    installable = installable,
-                    installMode = installMode,
-                    brand = brand,
-                    model = modelMatch.takeIf { it.isNotBlank() },
-                    hardware = hardwareMatch.takeIf { it.isNotBlank() },
-                    requiredCurrentFirmware = currentMatch.takeIf { it.isNotBlank() },
-                    downloadUrl = url,
-                    sha256 = sha256
-                ),
-                message = "تم العثور على تحديث شركة"
-            )
+                        ?: "تم العثور على مرجع لهذا الموديل، لكن لم يُعتمد للتثبيت المباشر بعد.",
+                    sourceUrl = item.optString("url").takeIf { it.startsWith("https://") }
+                )
+            }
         }
 
-        return FirmwareSearchResult(message = "لا يوجد تحديث شركات موثق ومطابق لهذا الراوتر")
+        val updates = root.optJSONArray("firmwareUpdates")
+        if (updates != null) {
+            for (index in 0 until updates.length()) {
+                val item = updates.optJSONObject(index) ?: continue
+                if (!item.optString("brand").equals(brand, true)) continue
+                val modelMatch = item.optString("modelContains")
+                if (modelMatch.isNotBlank() && !model.contains(modelMatch, true)) continue
+                val hardwareMatch = item.optString("hardwareContains")
+                if (hardwareMatch.isNotBlank() && !hardware.contains(hardwareMatch, true)) continue
+                val currentMatch = item.optString("currentFirmwareContains")
+                if (currentMatch.isNotBlank() && !current.contains(currentMatch, true)) continue
+
+                val version = item.optString("version").trim()
+                if (version.isBlank() || version.equals(current, true)) continue
+                val url = item.optString("url").takeIf { it.startsWith("https://") }
+                val sha256 = item.optString("sha256").takeIf { it.matches(Regex("[A-Fa-f0-9]{64}")) }
+                val installMode = item.optString("installMode", "direct_package")
+                val verified = item.optBoolean("verified", false)
+                val installable = verified && when (installMode.lowercase()) {
+                    "huawei_ota" -> true
+                    "direct_package" -> false
+                    else -> false
+                }
+
+                return FirmwareSearchResult(
+                    candidate = FirmwareCandidate(
+                        currentVersion = current,
+                        version = version,
+                        size = item.optString("size").takeIf { it.isNotBlank() },
+                        source = FirmwareSearchSource.COMPANIES,
+                        sourceLabel = item.optString("company", "تحديث شركة"),
+                        summaryArabic = item.optString("summaryArabic").takeIf { it.isNotBlank() }
+                            ?: "تحديث شركة موثق في قاعدة HAI MANAGER ومتوافق مع بيانات هذا الراوتر.",
+                        installable = installable,
+                        installMode = installMode,
+                        brand = brand,
+                        model = modelMatch.takeIf { it.isNotBlank() },
+                        hardware = hardwareMatch.takeIf { it.isNotBlank() },
+                        requiredCurrentFirmware = currentMatch.takeIf { it.isNotBlank() },
+                        downloadUrl = url,
+                        sha256 = sha256
+                    ),
+                    findings = findings,
+                    message = "تم العثور على تحديث شركة"
+                )
+            }
+        }
+
+        return if (findings.isNotEmpty()) {
+            FirmwareSearchResult(
+                findings = findings,
+                message = "وجد التطبيق مراجع Firmware لهذا الموديل، لكن لا يوجد تحديث آمن ومطابق جاهز للتنفيذ تلقائيًا"
+            )
+        } else {
+            FirmwareSearchResult(message = "لا يوجد تحديث شركات موثق ومطابق لهذا الراوتر")
+        }
     }
 
     private suspend fun executeHuaweiOta(
