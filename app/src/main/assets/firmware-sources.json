@@ -1,0 +1,38 @@
+{
+  "sourceVersion": 1,
+  "updatedAt": "2026-09-15",
+  "firmwareFindings": [
+    {
+      "brand": "ZTE",
+      "modelContains": "MC801A",
+      "version": "DL_MC801A_STC_SAV1.00.01",
+      "source": "ZTE Support",
+      "trust": "رسمي",
+      "status": "حزمة قديمة - غير مناسبة لـ B15",
+      "summaryArabic": "ZTE تنشر هذه الحزمة رسميًا لـ MC801A السعودي STC، لكنها تخص مسار الإصدارات القديمة وليست ترقية آمنة من B15. لذلك يعرضها HAI MANAGER كمعلومة فقط ولا يسمح بتنفيذها.",
+      "url": "https://support.ztedevices.com/en-gl/select-product/mc801a/"
+    },
+    {
+      "brand": "ZTE",
+      "modelContains": "MC801A",
+      "currentFirmwareContains": "SASTCMC801AV1.0.0B15",
+      "version": "BD_SASTCMC801AV1.0.0B15",
+      "source": "تقارير مستخدمين سعوديين",
+      "trust": "موثق مجتمعيًا",
+      "status": "الإصدار الحالي معروف",
+      "summaryArabic": "تم توثيق وصول B15 لأجهزة MC801A السعودية عبر OTA. هذا هو نفس فرع Firmware الموجود على الراوتر حاليًا، لذلك لا يعد تحديثًا جديدًا.",
+      "url": "https://www.adslgate.com/thread.php?t=2643164"
+    },
+    {
+      "brand": "ZTE",
+      "modelContains": "MC801A",
+      "currentFirmwareContains": "SASTCMC801AV1.0.0B15",
+      "version": "B20",
+      "source": "مجتمع عالم الراوترات",
+      "trust": "مجتمعي",
+      "status": "مرصود - غير موثق لمسار B15",
+      "summaryArabic": "تم رصد إصدار B20 لـ MC801A في المجتمع، لكن لا يوجد لدينا حتى الآن ملف موثق بمسار ترقية آمن من STC B15 ولا تطابق Hardware/Hash كامل. لن يفعّل التطبيق زر التنفيذ قبل إثبات هذه الشروط.",
+      "url": "https://routers.world/t/thdyth-lrawtr-zte-mc801a-rqm-b20-hsry-fqt-lealm-alrawtrat/761"
+    }
+  ]
+}
