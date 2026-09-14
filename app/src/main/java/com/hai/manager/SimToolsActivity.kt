@@ -3,25 +3,15 @@ package com.hai.manager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,10 +19,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import com.hai.manager.router.RouterActionResult
 import com.hai.manager.router.RouterSimService
 import com.hai.manager.router.SimProbe
@@ -47,7 +36,13 @@ class SimToolsActivity : ComponentActivity() {
             finish()
             return
         }
-        setContent { SimToolsScreen(url = url, onClose = { finish() }) }
+        setContent {
+            HaiTheme {
+                CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl) {
+                    SimToolsScreen(url = url, onClose = { finish() })
+                }
+            }
+        }
     }
 
     companion object {
@@ -90,122 +85,82 @@ private fun SimToolsScreen(url: String, onClose: () -> Unit) {
 
     LaunchedEffect(url) { reload() }
 
-    MaterialTheme(
-        colorScheme = lightColorScheme(
-            primary = Color(0xFF1F2933),
-            onPrimary = Color.White,
-            background = Color(0xFFF6F7F5),
-            surface = Color.White,
-            onSurface = Color(0xFF202428)
-        )
-    ) {
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Text("إدارة SIM", style = MaterialTheme.typography.headlineMedium)
-            Text("Huawei + ZTE فقط. لا يتم حفظ PIN أو PUK، ولا يظهر الإرسال إلا عندما يعلن الراوتر أن الرمز مطلوب.")
-
-            when {
-                loading -> CircularProgressIndicator()
-                probe == null -> {
-                    Text("لم تُقرأ حالة SIM. سجّل الدخول إلى الراوتر ثم أعد الفحص.")
-                    Button(onClick = { scope.launch { reload() } }, modifier = Modifier.fillMaxWidth()) {
-                        Text("إعادة الفحص")
-                    }
-                }
-                else -> {
-                    val current = probe!!
-                    val security = current.security
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                    ) {
-                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(current.brand.displayName, style = MaterialTheme.typography.titleLarge)
-                            Text(current.message)
-                            security.simState?.let { Text("حالة SIM: $it") }
-                            security.pinState?.let { Text("حالة PIN: $it") }
-                            security.pinAttemptsRemaining?.let { Text("محاولات PIN المتبقية: $it") }
-                            security.pukAttemptsRemaining?.let { Text("محاولات PUK المتبقية: $it") }
-                            security.networkLockState?.let { Text("قفل الشبكة: $it") }
-                            security.unlockAttemptsRemaining?.let { Text("محاولات فك قفل الشبكة المتبقية: $it") }
-                            security.iccid?.let { Text("ICCID: $it") }
-                            security.imsi?.let { Text("IMSI: $it") }
-                        }
-                    }
-
-                    when (current.requiredAction) {
-                        SimRequiredAction.PIN -> {
-                            OutlinedTextField(
-                                value = pin,
-                                onValueChange = { value -> pin = value.filter(Char::isDigit).take(8) },
-                                label = { Text("PIN") },
-                                visualTransformation = PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Button(
-                                onClick = { runAction { service.enterPin(url, current, pin) } },
-                                enabled = !busy && current.canEnterPin && pin.length in 4..8,
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text("إرسال PIN") }
-                        }
-
-                        SimRequiredAction.PUK -> {
-                            OutlinedTextField(
-                                value = puk,
-                                onValueChange = { value -> puk = value.filter(Char::isDigit).take(8) },
-                                label = { Text("PUK من مشغل الشريحة") },
-                                visualTransformation = PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedTextField(
-                                value = newPin,
-                                onValueChange = { value -> newPin = value.filter(Char::isDigit).take(8) },
-                                label = { Text("PIN جديد") },
-                                visualTransformation = PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Button(
-                                onClick = { runAction { service.enterPuk(url, current, puk, newPin) } },
-                                enabled = !busy && current.canEnterPuk && puk.length == 8 && newPin.length in 4..8,
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text("إرسال PUK وتعيين PIN جديد") }
-                        }
-
-                        SimRequiredAction.NONE -> Text("SIM جاهزة ولا تحتاج PIN أو PUK.")
-                        SimRequiredAction.UNKNOWN -> Text("لن يرسل HAI MANAGER أي رمز لأن حالة SIM غير مؤكدة على هذا Firmware.")
-                    }
-
-                    if (!security.networkLockState.isNullOrBlank()) {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                        ) {
-                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("قفل الشبكة", style = MaterialTheme.typography.titleMedium)
-                                Text("يعرض التطبيق حالة Network Lock والمحاولات المتبقية عندما يوفرها الراوتر. إدخال NCK لن يُفعّل إلا بعد توثيق endpoint للـFirmware المحدد؛ لن يتم التخمين على محاولات القفل.")
-                            }
-                        }
-                    }
-
-                    if (busy) CircularProgressIndicator()
-                    message?.let { Text(it) }
-                    OutlinedButton(onClick = { scope.launch { reload() } }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                        Text("تحديث حالة SIM")
-                    }
+    HaiPage(title = "SIM") {
+        when {
+            loading -> HaiCard { CircularProgressIndicator() }
+            probe == null -> HaiCard {
+                Text("تعذر قراءة SIM")
+                Button(onClick = { scope.launch { reload() } }, modifier = Modifier.fillMaxWidth()) {
+                    Text("إعادة المحاولة")
                 }
             }
+            else -> {
+                val current = probe!!
+                val security = current.security
 
-            OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("رجوع") }
+                HaiCard {
+                    HaiSectionTitle("الحالة")
+                    HaiValueRow("SIM", security.simState)
+                    HaiValueRow("PIN", security.pinState)
+                    HaiValueRow("قفل الشبكة", security.networkLockState)
+                    HaiValueRow("محاولات PIN", security.pinAttemptsRemaining)
+                    HaiValueRow("محاولات PUK", security.pukAttemptsRemaining)
+                    HaiValueRow("محاولات الفك", security.unlockAttemptsRemaining)
+                }
+
+                when (current.requiredAction) {
+                    SimRequiredAction.PIN -> HaiCard {
+                        OutlinedTextField(
+                            value = pin,
+                            onValueChange = { value -> pin = value.filter(Char::isDigit).take(8) },
+                            label = { Text("PIN") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = { runAction { service.enterPin(url, current, pin) } },
+                            enabled = !busy && current.canEnterPin && pin.length in 4..8,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("إرسال") }
+                    }
+
+                    SimRequiredAction.PUK -> HaiCard {
+                        OutlinedTextField(
+                            value = puk,
+                            onValueChange = { value -> puk = value.filter(Char::isDigit).take(8) },
+                            label = { Text("PUK") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = newPin,
+                            onValueChange = { value -> newPin = value.filter(Char::isDigit).take(8) },
+                            label = { Text("PIN جديد") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = { runAction { service.enterPuk(url, current, puk, newPin) } },
+                            enabled = !busy && current.canEnterPuk && puk.length == 8 && newPin.length in 4..8,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("إرسال") }
+                    }
+
+                    SimRequiredAction.NONE -> HaiStatusChip("SIM جاهزة")
+                    SimRequiredAction.UNKNOWN -> HaiStatusChip("الحالة غير معروفة", active = false)
+                }
+
+                if (busy) CircularProgressIndicator()
+                message?.let { Text(it) }
+            }
         }
+
+        OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("رجوع") }
     }
 }
