@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.content.pm.Signature
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -108,16 +109,33 @@ class UpdateRepository {
 }
 
 object UpdateCompatibility {
-    fun currentSigningCertSha256(context: Context): String? =
-        packageSigningCertSha256(context.packageManager, context.packageName)
+    /**
+     * Android may expose more than one certificate when signing lineage/key rotation exists.
+     * Never decide compatibility from only the first signer.
+     */
+    fun currentSigningCertSha256s(context: Context): Set<String> = runCatching {
+        val pm = context.packageManager
+        val info = if (Build.VERSION.SDK_INT >= 33) {
+            pm.getPackageInfo(
+                context.packageName,
+                PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong())
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+        }
+        signingCertSha256s(info)
+    }.getOrDefault(emptySet())
+
+    fun currentSigningCertSha256(context: Context): String? = currentSigningCertSha256s(context).firstOrNull()
 
     fun canReplaceInstalled(context: Context, update: AppUpdate): Boolean {
         if (!update.signatureStable || update.signingCertSha256.isBlank()) return false
-        val current = currentSigningCertSha256(context) ?: return false
-        return current.equals(update.signingCertSha256, ignoreCase = true)
+        val installed = currentSigningCertSha256s(context)
+        return installed.any { it.equals(update.signingCertSha256, ignoreCase = true) }
     }
 
-    fun archiveSigningCertSha256(context: Context, file: File): String? {
+    fun archiveSigningCertSha256s(context: Context, file: File): Set<String> {
         val packageInfo = if (Build.VERSION.SDK_INT >= 33) {
             context.packageManager.getPackageArchiveInfo(
                 file.absolutePath,
@@ -127,30 +145,23 @@ object UpdateCompatibility {
             @Suppress("DEPRECATION")
             context.packageManager.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
         }
-        return packageInfo?.let(::signingCertSha256)
+        return packageInfo?.let(::signingCertSha256s).orEmpty()
     }
 
-    private fun packageSigningCertSha256(pm: PackageManager, packageName: String): String? {
-        val info = if (Build.VERSION.SDK_INT >= 33) {
-            pm.getPackageInfo(
-                packageName,
-                PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong())
-            )
+    fun archiveSigningCertSha256(context: Context, file: File): String? =
+        archiveSigningCertSha256s(context, file).firstOrNull()
+
+    private fun signingCertSha256s(info: PackageInfo): Set<String> {
+        val signatures = linkedSetOf<Signature>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signingInfo = info.signingInfo
+            signingInfo?.apkContentsSigners?.let(signatures::addAll)
+            signingInfo?.signingCertificateHistory?.let(signatures::addAll)
         } else {
             @Suppress("DEPRECATION")
-            pm.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+            info.signatures?.let(signatures::addAll)
         }
-        return signingCertSha256(info)
-    }
-
-    private fun signingCertSha256(info: PackageInfo): String? {
-        val bytes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            info.signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray()
-        } else {
-            @Suppress("DEPRECATION")
-            info.signatures?.firstOrNull()?.toByteArray()
-        } ?: return null
-        return sha256(bytes)
+        return signatures.mapTo(linkedSetOf()) { sha256(it.toByteArray()) }
     }
 }
 
@@ -202,7 +213,6 @@ object UpdateNotifications {
         )
         val text = when {
             !update.signatureStable -> "الإصدار ${update.versionName} موجود، لكنه غير موقع بمفتاح التحديث الثابت"
-            !UpdateCompatibility.canReplaceInstalled(context, update) -> "الإصدار ${update.versionName} يحتاج إعادة تثبيت انتقالية مرة واحدة"
             else -> "الإصدار ${update.versionName} جاهز للتنزيل والتثبيت فوق النسخة الحالية"
         }
         val notification = NotificationCompat.Builder(context, UPDATE_CHANNEL)
@@ -239,16 +249,19 @@ object ApkUpdateInstaller {
     fun downloadAndInstall(context: Context, update: AppUpdate) {
         if (!update.downloadable) return
         if (!update.signatureStable || update.signingCertSha256.isBlank()) {
-            UpdateNotifications.showInstallError(context, "هذا الإصدار ليس ضمن قناة التوقيع الثابت، لذلك لن يحاول التطبيق استبدال النسخة الحالية.")
-            return
-        }
-        if (!UpdateCompatibility.canReplaceInstalled(context, update)) {
             UpdateNotifications.showInstallError(
                 context,
-                "مفتاح توقيع النسخة الحالية مختلف. يلزم حذف النسخة القديمة مرة واحدة وتثبيت أول إصدار موقع بمفتاح HAI MANAGER الثابت."
+                "هذا الإصدار ليس ضمن قناة التوقيع الثابت، لذلك لن يحاول التطبيق استبدال النسخة الحالية."
             )
             return
         }
+
+        /*
+         * Do not block an otherwise valid update just because PackageManager failed to
+         * expose the installed certificate exactly as expected. Android's PackageInstaller
+         * is the final authority and will reject a genuinely incompatible signer anyway.
+         * We still cryptographically verify the downloaded APK against the permanent HAI cert.
+         */
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
             context.startActivity(
                 Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
@@ -287,12 +300,18 @@ object ApkUpdateInstaller {
                             return
                         }
                     }
-                    val archiveCert = UpdateCompatibility.archiveSigningCertSha256(receiverContext, file)
-                    if (!archiveCert.equals(update.signingCertSha256, ignoreCase = true)) {
+
+                    val archiveCerts = UpdateCompatibility.archiveSigningCertSha256s(receiverContext, file)
+                    val expectedCert = update.signingCertSha256.normalizeHex()
+                    if (archiveCerts.none { it.equals(expectedCert, ignoreCase = true) }) {
                         file.delete()
-                        UpdateNotifications.showInstallError(receiverContext, "توقيع APK لا يطابق مفتاح HAI MANAGER المعتمد.")
+                        UpdateNotifications.showInstallError(
+                            receiverContext,
+                            "توقيع APK لا يطابق مفتاح HAI MANAGER المعتمد. تم إيقاف التثبيت."
+                        )
                         return
                     }
+
                     val uri = manager.getUriForDownloadedFile(downloadId)
                     if (uri == null) {
                         UpdateNotifications.showInstallError(receiverContext, "تعذر فتح ملف التحديث بعد التنزيل.")
