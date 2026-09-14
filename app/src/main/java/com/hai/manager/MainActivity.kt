@@ -65,8 +65,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         UpdateNotifications.createChannel(this)
         UpdateScheduler.schedule(this)
+        requestLocalNetworkPermission()
         requestNotificationPermission()
         setContent { HaiManagerApp() }
+    }
+
+    private fun requestLocalNetworkPermission() {
+        if (Build.VERSION.SDK_INT >= 37 &&
+            checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.ACCESS_LOCAL_NETWORK), 201)
+        }
     }
 
     private fun requestNotificationPermission() {
