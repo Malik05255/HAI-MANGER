@@ -1,13 +1,13 @@
 {
-  "versionCode": 4,
-  "versionName": "0.3.1",
-  "apkUrl": "",
-  "notes": "قناة التحديث التلقائي متوقفة مؤقتًا حتى تفعيل مفتاح HAI MANAGER الثابت. لا تحاول تثبيت نسخة اختبار فوق نسخة موقعة بمفتاح مختلف.",
+  "versionCode": 6,
+  "versionName": "0.3.3",
+  "apkUrl": "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/HAI-MANAGER.apk",
+  "notes": "إصلاح سلسلة التوقيع الدائمة وتحديثات HAI MANAGER الآمنة.",
   "mandatory": false,
-  "signatureStable": false,
-  "signingCertSha256": "",
-  "sha256": "",
-  "channel": "migration",
-  "publishedAt": "2026-09-14T19:36:00Z",
+  "signatureStable": true,
+  "signingCertSha256": "D59B0F985ED8CF4A903938B7904A5F33EDA01E8817E994B6A20D78D164BC2441",
+  "sha256": "B8FEA79B12F5C122C24EB0D145FEF74E232657CC16EC3AEA8E7B01E2AC1FCB63",
+  "channel": "beta",
+  "publishedAt": "2026-09-14T20:19:20Z",
   "catalogVersion": 2
 }
