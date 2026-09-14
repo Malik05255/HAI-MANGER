@@ -439,14 +439,6 @@ private fun RouterScreen(
             }
         }
 
-        OutlinedButton(
-            onClick = { contextStartFirmware(current.snapshot.managementUrl) },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
-        ) {
-            Icon(Icons.Outlined.SystemUpdate, contentDescription = null)
-            Text("  تحديث نظام الراوتر")
-        }
-
         if (RouterCapability.REBOOT in caps) {
             OutlinedButton(
                 onClick = onReboot,
@@ -465,14 +457,6 @@ private fun RouterScreen(
             Icon(Icons.Outlined.Refresh, contentDescription = null)
             Text("  تحديث")
         }
-    }
-}
-
-@Composable
-private fun contextStartFirmware(url: String?) {
-    val context = LocalContext.current
-    if (!url.isNullOrBlank()) {
-        context.startActivity(Intent(context, FirmwareToolsActivity::class.java))
     }
 }
 
