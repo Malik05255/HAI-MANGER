@@ -1,5 +1,8 @@
 package com.hai.manager.router
 
+import org.json.JSONArray
+import org.json.JSONObject
+
 enum class FirmwareVerification(val displayName: String) {
     VERIFIED("موثق"),
     RUNTIME_PROBED("تحقق وقت التشغيل"),
@@ -25,12 +28,91 @@ data class FirmwareProfileInfo(
 )
 
 val RouterInspection.firmwareProfileInfo: FirmwareProfileInfo
-    get() = RouterFirmwareProfiles.resolve(
-        brand = snapshot.brand,
-        model = device?.model ?: snapshot.model,
-        firmware = device?.firmwareVersion,
-        capabilities = capabilities
-    )
+    get() {
+        val model = device?.model ?: snapshot.model
+        val firmware = device?.firmwareVersion
+        val baseline = RouterFirmwareProfiles.resolve(
+            brand = snapshot.brand,
+            model = model,
+            firmware = firmware,
+            capabilities = capabilities
+        )
+        val live = LiveFirmwareProfileCache.resolve(
+            brand = snapshot.brand,
+            model = model,
+            firmware = firmware
+        ) ?: return baseline
+        return mergeConservatively(baseline, live)
+    }
+
+/**
+ * Cache للـFirmware profiles القادمة من device-catalog.json.
+ * قاعدة الأجهزة البعيدة لا تستطيع توسيع صلاحيات الكتابة فوق الحد الموجود في APK الموقع؛
+ * يمكنها فقط تحسين المطابقة أو تضييق/تعطيل عملية بسرعة عند اكتشاف Firmware غير آمن.
+ */
+object LiveFirmwareProfileCache {
+    @Volatile
+    private var rawCatalog: String? = null
+
+    fun update(raw: String?) {
+        if (raw.isNullOrBlank()) return
+        val valid = runCatching {
+            val root = JSONObject(raw)
+            root.optInt("catalogVersion") > 0 && root.optJSONArray("firmwareProfiles") != null
+        }.getOrDefault(false)
+        if (valid) rawCatalog = raw
+    }
+
+    fun resolve(brand: RouterBrand, model: String?, firmware: String?): FirmwareProfileInfo? {
+        val raw = rawCatalog ?: return null
+        return runCatching {
+            val root = JSONObject(raw)
+            val version = root.optInt("catalogVersion")
+            val profiles = root.optJSONArray("firmwareProfiles") ?: return@runCatching null
+            val normalizedModel = model.orEmpty().trim()
+            val normalizedFirmware = firmware.orEmpty().trim()
+
+            var best: FirmwareProfileInfo? = null
+            var bestScore = Int.MIN_VALUE
+            for (index in 0 until profiles.length()) {
+                val item = profiles.optJSONObject(index) ?: continue
+                if (!brandMatches(item.optString("brand"), brand)) continue
+
+                val modelPatterns = buildList {
+                    item.optString("model").trim().takeIf { it.isNotBlank() }?.let(::add)
+                    addAll(item.stringList("families"))
+                    addAll(item.stringList("modelContains"))
+                }.distinct()
+                if (modelPatterns.isNotEmpty() && modelPatterns.none { normalizedModel.contains(it, ignoreCase = true) }) continue
+
+                val firmwarePatterns = buildList {
+                    item.optString("firmwareContains").trim().takeIf { it.isNotBlank() }?.let(::add)
+                    addAll(item.stringList("firmwarePatterns"))
+                }.distinct()
+                if (firmwarePatterns.isNotEmpty() && firmwarePatterns.none { normalizedFirmware.contains(it, ignoreCase = true) }) continue
+
+                val score = (if (firmwarePatterns.isNotEmpty()) 10_000 else 0) +
+                    (modelPatterns.maxOfOrNull { it.length } ?: 0) * 10 +
+                    if (item.optString("model").isNotBlank()) 500 else 0
+                if (score < bestScore) continue
+
+                val profileId = item.optString("id").ifBlank { "LIVE-$index" }
+                val notes = item.optString("notes").ifBlank { "مطابقة من قاعدة Firmware الحية." }
+                best = FirmwareProfileInfo(
+                    profileId = profileId,
+                    verification = item.optString("verification").toFirmwareVerification(),
+                    model = normalizedModel.ifBlank { "غير معروف" },
+                    firmware = normalizedFirmware.ifBlank { "غير معروف" },
+                    bandLock = item.optString("bandLock").toActionSupport(),
+                    nckEntry = item.optString("nck").toActionSupport(),
+                    notes = "قاعدة الأجهزة الحية v$version: $notes"
+                )
+                bestScore = score
+            }
+            best
+        }.getOrNull()
+    }
+}
 
 object RouterFirmwareProfiles {
     fun resolve(
@@ -102,6 +184,71 @@ object RouterFirmwareProfiles {
             nckEntry = ProfileActionSupport.UNAVAILABLE,
             notes = "لم يطابق الجهاز Profile كتابة موثق؛ HAI MANAGER يبقي العمليات الحساسة معطلة."
         )
+    }
+}
+
+private fun mergeConservatively(
+    baseline: FirmwareProfileInfo,
+    live: FirmwareProfileInfo
+): FirmwareProfileInfo = FirmwareProfileInfo(
+    profileId = live.profileId,
+    verification = stricterVerification(baseline.verification, live.verification),
+    model = live.model,
+    firmware = live.firmware,
+    bandLock = stricterAction(baseline.bandLock, live.bandLock),
+    nckEntry = stricterAction(baseline.nckEntry, live.nckEntry),
+    notes = "${live.notes} لا تستطيع قاعدة البيانات البعيدة رفع صلاحية الكتابة فوق الحد الموجود في APK الموقع."
+)
+
+private fun stricterVerification(a: FirmwareVerification, b: FirmwareVerification): FirmwareVerification {
+    fun rank(value: FirmwareVerification): Int = when (value) {
+        FirmwareVerification.UNKNOWN -> 0
+        FirmwareVerification.READ_ONLY -> 1
+        FirmwareVerification.RUNTIME_PROBED -> 2
+        FirmwareVerification.VERIFIED -> 3
+    }
+    return if (rank(a) <= rank(b)) a else b
+}
+
+private fun stricterAction(a: ProfileActionSupport, b: ProfileActionSupport): ProfileActionSupport {
+    fun rank(value: ProfileActionSupport): Int = when (value) {
+        ProfileActionSupport.UNAVAILABLE -> 0
+        ProfileActionSupport.READ_ONLY -> 1
+        ProfileActionSupport.RUNTIME_PROBE -> 2
+        ProfileActionSupport.VERIFIED -> 3
+    }
+    return if (rank(a) <= rank(b)) a else b
+}
+
+private fun brandMatches(raw: String, brand: RouterBrand): Boolean {
+    val normalized = raw.trim().replace("-", "_").uppercase()
+    return when (brand) {
+        RouterBrand.ZTE -> normalized == "ZTE"
+        RouterBrand.HUAWEI -> normalized == "HUAWEI"
+        else -> false
+    }
+}
+
+private fun String.toFirmwareVerification(): FirmwareVerification = when (trim().lowercase()) {
+    "verified" -> FirmwareVerification.VERIFIED
+    "runtime_probed", "runtime_probe" -> FirmwareVerification.RUNTIME_PROBED
+    "read_only" -> FirmwareVerification.READ_ONLY
+    else -> FirmwareVerification.UNKNOWN
+}
+
+private fun String.toActionSupport(): ProfileActionSupport = when (trim().lowercase()) {
+    "verified", "verified_write" -> ProfileActionSupport.VERIFIED
+    "runtime_probe", "runtime_preflight" -> ProfileActionSupport.RUNTIME_PROBE
+    "read_only", "diagnostics_only" -> ProfileActionSupport.READ_ONLY
+    else -> ProfileActionSupport.UNAVAILABLE
+}
+
+private fun JSONObject.stringList(key: String): List<String> {
+    val array: JSONArray = optJSONArray(key) ?: return emptyList()
+    return buildList {
+        for (index in 0 until array.length()) {
+            array.optString(index).trim().takeIf { it.isNotBlank() }?.let(::add)
+        }
     }
 }
 

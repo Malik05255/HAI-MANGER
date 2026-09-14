@@ -1,5 +1,5 @@
 {
-  "catalogVersion": 8,
+  "catalogVersion": 9,
   "updatedAt": "2026-09-15",
   "focus": ["ZTE", "Huawei"],
   "devices": [
@@ -32,7 +32,7 @@
       "verification":"verified",
       "bandLock":"verified_write",
       "nck":"read_only",
-      "notes":"NR5G band lock is enabled only for this exact verified profile without runtime downgrade."
+      "notes":"قفل NR موثق لهذا الـFirmware. إدخال NCK يبقى قراءة فقط حتى وجود endpoint رسمي موثق."
     },
     {
       "id":"ZTE-5G-GOFORM-RUNTIME",
@@ -42,7 +42,7 @@
       "bandLock":"runtime_preflight",
       "preflight":"write current readable band list unchanged, read it back, abort if mismatch",
       "nck":"read_only",
-      "notes":"If band-mask encoding is hex/opaque or the no-op verification fails, HAI MANAGER blocks the write."
+      "notes":"إذا كان band mask مشفرًا أو فشل no-op preflight، يمنع HAI MANAGER الكتابة."
     },
     {
       "id":"ZTE-4G-GOFORM-READ",
@@ -50,7 +50,8 @@
       "families":["MF286","MF289","MF297"],
       "verification":"runtime_probed",
       "bandLock":"read_only",
-      "nck":"read_only"
+      "nck":"read_only",
+      "notes":"تشخيص وقراءة فقط للعمليات الحساسة حتى توثيق Firmware محدد."
     },
     {
       "id":"HUAWEI-HILINK-RUNTIME",
@@ -59,11 +60,15 @@
       "verification":"runtime_probed",
       "bandLock":"read_only",
       "nck":"read_only",
-      "notes":"HiLink network-mode APIs remain enabled only for already verified operations. Band/NCK writes require an exact firmware profile before activation."
+      "notes":"تستخدم واجهات HiLink للأوامر المثبتة فقط. Band Lock وNCK يحتاجان Profile Firmware موثق قبل تفعيل الكتابة."
     }
   ],
   "policy": {
+    "focus":"Huawei_ZTE_only",
+    "remoteProfilesCanEscalateWrites": false,
+    "remoteProfilesCanRestrictWrites": true,
     "networkUnlock": "Only manufacturer/carrier-supported or otherwise explicitly verified NCK entry flows may be enabled. Undocumented bypass/exploit paths are not shipped.",
-    "bandLock": "Exact profiles may write directly. Runtime profiles require a no-op preflight and post-read verification."
+    "bandLock": "Exact profiles may write directly. Runtime profiles require a no-op preflight and post-read verification.",
+    "safety":"Live catalog updates may tighten or disable write operations immediately, but cannot grant broader write access than the signed APK baseline."
   }
 }
