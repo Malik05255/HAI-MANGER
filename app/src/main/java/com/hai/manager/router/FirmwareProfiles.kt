@@ -49,13 +49,15 @@ val RouterInspection.firmwareProfileInfo: FirmwareProfileInfo
             brand = snapshot.brand,
             model = model,
             firmware = firmware
-        ) ?: return baseline
-        return mergeConservatively(baseline, live)
+        )
+        val resolved = if (live == null) baseline else mergeConservatively(baseline, live)
+        return applyProbeRestrictions(resolved, probeReport)
     }
 
 val RouterInspection.profileProbeReadiness: ProfileProbeReadiness
     get() {
-        val required = firmwareProfileInfo.requiredProbes
+        val profile = firmwareProfileInfo
+        val required = profile.requiredProbes
         if (required.isEmpty()) {
             return ProfileProbeReadiness(true, emptySet(), emptySet(), "لا يتطلب Profile الحالي probes إضافية")
         }
@@ -218,6 +220,23 @@ object RouterFirmwareProfiles {
             notes = "لم يطابق الجهاز Profile كتابة موثق؛ HAI MANAGER يبقي العمليات الحساسة معطلة."
         )
     }
+}
+
+private fun applyProbeRestrictions(
+    profile: FirmwareProfileInfo,
+    report: RouterCapabilityReport?
+): FirmwareProfileInfo {
+    if (!profile.bandLock.canWrite || profile.requiredProbes.isEmpty()) return profile
+    val available = report?.items
+        ?.filter { it.status == CapabilityProbeStatus.AVAILABLE }
+        ?.mapTo(mutableSetOf()) { it.id }
+        .orEmpty()
+    val missing = profile.requiredProbes - available
+    if (missing.isEmpty()) return profile
+    return profile.copy(
+        bandLock = ProfileActionSupport.READ_ONLY,
+        notes = "${profile.notes} الكتابة محجوبة حاليًا حتى تنجح probes المطلوبة: ${missing.joinToString(", ")}."
+    )
 }
 
 private fun mergeConservatively(
