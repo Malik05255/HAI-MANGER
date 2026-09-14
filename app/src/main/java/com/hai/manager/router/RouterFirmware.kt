@@ -65,15 +65,19 @@ class RouterFirmwareService {
         delay(900)
         val list = runCatching { client.get("/api/online-update/url-list") }.getOrNull()
         val statusResponse = runCatching { client.get("/api/online-update/status") }.getOrNull()
-        val versions = list?.body?.let(::xmlValues).orEmpty()
-        val sizes = list?.body?.let { xmlValues(it, "ComponentSize") }.orEmpty()
+        val components = list?.body?.let { parseHuaweiComponents(it) }.orEmpty()
         val current = inspection.device?.firmwareVersion
-        val available = versions.firstOrNull { it.isNotBlank() && !it.equals(current, ignoreCase = true) }
-            ?: versions.firstOrNull { it.isNotBlank() }
+        val firmwareComponent = components.firstOrNull { component ->
+            val name = component.name.lowercase()
+            "firmware" in name || "software" in name || "modem" in name || "system" in name
+        } ?: components.firstOrNull()
+
+        val available = firmwareComponent?.version?.takeIf {
+            it.isNotBlank() && !it.equals(current, ignoreCase = true)
+        }
         val progress = statusResponse?.body?.let { xmlValue(it, "DownloadProgress") }?.toIntOrNull()
         val componentState = statusResponse?.body?.let { xmlValue(it, "CurrentComponentStatus") }
-
-        val updateFound = !available.isNullOrBlank() && !available.equals(current, ignoreCase = true)
+        val updateFound = !available.isNullOrBlank()
         val state = when {
             progress != null && progress in 1..99 -> "جارٍ تنزيل التحديث"
             componentState == "100" -> "اكتمل التحديث"
@@ -84,8 +88,8 @@ class RouterFirmwareService {
 
         return RouterFirmwareStatus(
             currentVersion = current,
-            availableVersion = available?.takeIf { updateFound },
-            componentSize = sizes.firstOrNull()?.takeIf { it.isNotBlank() },
+            availableVersion = available,
+            componentSize = firmwareComponent?.size?.takeIf { it.isNotBlank() },
             updateAvailable = updateFound,
             canInstall = updateFound && list?.successful == true,
             progressPercent = progress,
@@ -133,8 +137,8 @@ class RouterFirmwareService {
             )
 
         val current = inspection.device?.firmwareVersion ?: json.optString("wa_inner_version").takeIf { it.isNotBlank() }
-        val newState = json.optString("new_version_state").trim()
-        val upgradeState = json.optString("current_upgrade_state").trim()
+        val newState = json.optString("new_version_state").trim().lowercase()
+        val upgradeState = json.optString("current_upgrade_state").trim().lowercase()
         val result = json.optString("upgrade_result").trim()
         val version = sequenceOf("update_version", "new_version")
             .map { json.optString(it).trim() }
@@ -169,10 +173,25 @@ class RouterFirmwareService {
         }
     }
 
-    private fun xmlValues(xml: String, tag: String = "Version"): List<String> =
-        Regex("<$tag>(.*?)</$tag>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+    private data class HuaweiComponent(
+        val name: String,
+        val version: String,
+        val size: String?
+    )
+
+    private fun parseHuaweiComponents(xml: String): List<HuaweiComponent> {
+        return Regex("<Component>(.*?)</Component>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
             .findAll(xml)
-            .map { it.groupValues[1].trim() }
-            .filter { it.isNotBlank() }
+            .mapNotNull { match ->
+                val block = match.groupValues[1]
+                val version = xmlValue(block, "Version")?.trim().orEmpty()
+                if (version.isBlank()) return@mapNotNull null
+                HuaweiComponent(
+                    name = xmlValue(block, "ComponentName")?.trim().orEmpty(),
+                    version = version,
+                    size = xmlValue(block, "ComponentSize")?.trim()
+                )
+            }
             .toList()
+    }
 }
