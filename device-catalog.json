@@ -1,5 +1,5 @@
 {
-  "catalogVersion": 3,
+  "catalogVersion": 4,
   "updatedAt": "2026-09-14",
   "devices": [
     {"brand":"ZTE","model":"MC888","aliases":["MC888"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
@@ -12,8 +12,11 @@
     {"brand":"Huawei","model":"B535","aliases":["B535"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
     {"brand":"Huawei","model":"B525","aliases":["B525"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
     {"brand":"Nokia","model":"FastMile 5G Gateway","aliases":["FastMile"],"discovery":true,"firmware":"official_only","networkUnlock":"unsupported"},
-    {"brand":"Netgear","model":"Nighthawk M6","aliases":["Nighthawk M6","MR6150"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
-    {"brand":"Netgear","model":"Nighthawk M5","aliases":["Nighthawk M5","MR5200"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
+    {"brand":"Netgear","model":"Nighthawk M5","aliases":["Nighthawk M5","MR5100","MR5100C","MR5200"],"discovery":true,"diagnostics":"model_json","firmware":"official_only","networkUnlock":"adapter_required"},
+    {"brand":"Netgear","model":"Nighthawk M6","aliases":["Nighthawk M6","MR6110","MR6150","MR6220","MR6220G"],"discovery":true,"diagnostics":"model_json","firmware":"official_only","networkUnlock":"adapter_required"},
+    {"brand":"Netgear","model":"Nighthawk M6 Pro","aliases":["Nighthawk M6 Pro","MR6450","MR6500","MR6520","MR6520G","MR6550"],"discovery":true,"diagnostics":"model_json","firmware":"official_only","networkUnlock":"adapter_required"},
+    {"brand":"Netgear","model":"Nighthawk M7","aliases":["Nighthawk M7","MH7150"],"discovery":true,"diagnostics":"model_json","firmware":"official_only","networkUnlock":"adapter_required"},
+    {"brand":"Netgear","model":"Nighthawk M7 Pro","aliases":["Nighthawk M7 Pro","MR7400","MR7450","MR7500"],"discovery":true,"diagnostics":"model_json","firmware":"official_only","networkUnlock":"adapter_required"},
     {"brand":"TP-Link","model":"Archer MR600","aliases":["MR600"],"discovery":true,"firmware":"official_only","networkUnlock":"unsupported"},
     {"brand":"TP-Link","model":"Archer NX200","aliases":["NX200"],"discovery":true,"firmware":"official_only","networkUnlock":"unsupported"},
     {"brand":"Zyxel","model":"NR5103E","aliases":["NR5103E"],"discovery":true,"firmware":"official_only","networkUnlock":"unsupported"},
@@ -43,6 +46,13 @@
       "actions": ["reboot", "network_mode_auto", "network_mode_lte_only", "wifi_rename_when_available"],
       "postVerify": ["network_mode", "wifi_rename_when_connection_survives"],
       "notes": "تظهر الأوامر فقط إذا استجابت SesTokInfo وواجهات net-mode/WLAN بالبنية المتوقعة، وتتم إعادة القراءة بعد التغيير عندما يبقى الاتصال متاحًا."
+    },
+    {
+      "brand": "Netgear",
+      "family": "Nighthawk M5/M6/M7",
+      "verification": "model_json_after_webui_login",
+      "actions": ["read_device_info", "read_signal", "read_ca", "read_band", "read_cell"],
+      "notes": "قراءة تشخيصية فقط عبر model.json بعد تسجيل الدخول. لا توجد أوامر تغيير مفعلة حتى توثيق واجهة الكتابة لكل Firmware."
     }
   ]
 }
