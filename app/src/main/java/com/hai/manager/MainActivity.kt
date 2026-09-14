@@ -63,6 +63,7 @@ import com.hai.manager.router.RouterActionResult
 import com.hai.manager.router.RouterActionService
 import com.hai.manager.router.RouterBrand
 import com.hai.manager.router.RouterCapability
+import com.hai.manager.router.RouterCapabilityProbeService
 import com.hai.manager.router.RouterDiscoveryService
 import com.hai.manager.router.RouterInspection
 import com.hai.manager.router.RouterInspectorService
@@ -149,6 +150,7 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val discovery = remember { RouterDiscoveryService(context.applicationContext) }
     val inspector = remember { RouterInspectorService() }
+    val capabilityProbe = remember { RouterCapabilityProbeService() }
     val actions = remember { RouterActionService() }
     var scanning by remember { mutableStateOf(false) }
     var router by remember { mutableStateOf<RouterSnapshot?>(null) }
@@ -164,7 +166,8 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
             actionMessage = null
             val found = discovery.discover()
             router = found
-            inspection = if (found.connected && found.managementUrl != null) inspector.inspect(found) else null
+            val baseInspection = if (found.connected && found.managementUrl != null) inspector.inspect(found) else null
+            inspection = baseInspection?.let { capabilityProbe.enrich(it) }
             scanning = false
         }
     }
@@ -175,7 +178,9 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
             val result = block()
             actionMessage = result.message
             actionBusy = false
-            if (result.success) inspection = inspection?.let { inspector.inspect(it.snapshot) }
+            if (result.success) {
+                inspection = inspection?.let { current -> capabilityProbe.enrich(inspector.inspect(current.snapshot)) }
+            }
         }
     }
 
@@ -265,6 +270,38 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
             }
         }
 
+        inspection?.probeReport?.let { report ->
+            SimpleCard("Capability Probe") {
+                DetailRow("Firmware Fingerprint", report.firmwareFingerprint)
+                DetailRow("الملخص", report.summary)
+                report.items.forEach { item ->
+                    DetailRow(item.label, item.status.displayName)
+                    item.detail?.let { detail ->
+                        Text(detail, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 12.sp)
+                    }
+                }
+                report.bandSelection?.let { band ->
+                    HorizontalDivider()
+                    DetailRow("مصدر Band", band.source)
+                    OptionalDetailRow("NetworkBand raw", band.networkBandRaw)
+                    OptionalDetailRow("LTEBand raw", band.lteBandMaskRaw)
+                    OptionalDetailRow("NRBand raw", band.nrBandMaskRaw)
+                    if (band.decodedLteBands.isNotEmpty()) {
+                        DetailRow("LTE decoded", band.decodedLteBands.joinToString(" + ") { "B$it" })
+                    }
+                    if (band.decodedNrBands.isNotEmpty()) {
+                        DetailRow("NR decoded", band.decodedNrBands.joinToString(" + ") { "n$it" })
+                    }
+                    if (band.advertisedLteBands.isNotEmpty()) {
+                        DetailRow("LTE المعلنة", band.advertisedLteBands.joinToString(", ") { "B$it" })
+                    }
+                    band.note?.let { Text(it, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 12.sp) }
+                }
+                DetailRow("Network Lock قراءة", if (report.networkLockReadable) "متاحة" else "غير ظاهرة")
+                DetailRow("NCK كتابة موثقة", if (report.nckEntryVerified) "نعم" else "لا")
+            }
+        }
+
         inspection?.security?.takeIf { it.hasData }?.let { security ->
             SimpleCard("SIM وقفل الشبكة") {
                 OptionalDetailRow("حالة SIM", security.simState)
@@ -329,7 +366,7 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
         }
 
         SimpleCard("التوافق") {
-            Text("HAI MANAGER يطابق Model + Firmware قبل العمليات الحساسة. NCK غير الموثق يبقى قراءة فقط، وBand Lock التجريبي لا يبدأ إلا بعد preflight يحافظ على القيمة الحالية ويتحقق منها.")
+            Text("HAI MANAGER يطابق Model + Firmware ثم يجري Capability Probe قراءة فقط. NCK غير الموثق يبقى قراءة فقط، وBand Lock التجريبي لا يبدأ إلا بعد preflight يحافظ على القيمة الحالية ويتحقق منها.")
         }
     }
 }
@@ -411,13 +448,13 @@ private fun DevicesScreen(context: Context, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         AppHeader()
         Text("قاعدة الأجهزة", style = MaterialTheme.typography.titleLarge)
-        Text("الأولوية الحالية: Firmware profiles دقيقة لـ Huawei وZTE قبل إضافة أي شركة أخرى.")
+        Text("الأولوية الحالية: Firmware profiles وCapability probes دقيقة لـ Huawei وZTE قبل إضافة أي شركة أخرى.")
         CatalogCard(status, syncing, ::sync)
         SimpleCard("ZTE") {
-            Text("MC801A / MC888 / MC889 / MC7010 وعائلات MF286/MF289/MF297: Profile مطابق للـFirmware، تشخيص SIM/Network Lock، وBand Lock موثق أو Runtime-preflight حسب الحالة.")
+            Text("MC801A / MC888 / MC889 / MC7010 وعائلات MF286/MF289/MF297: Profile مطابق للـFirmware، Capability Probe، تشخيص SIM/Network Lock، وBand Lock موثق أو Runtime-preflight حسب الحالة.")
         }
         SimpleCard("Huawei") {
-            Text("H155/H158/H138/H122/H112 وعائلات B818/B715/B628/B535/B525: HiLink/WebUI مع Profile لكل Firmware. Band/NCK يبقيان قراءة فقط حتى توثيق ترميز الكتابة.")
+            Text("H155/H158/H138/H122/H112 وعائلات B818/B715/B628/B535/B525: HiLink/WebUI مع Profile لكل Firmware، تشخيص LTEBand/NetworkBand وقائمة النطاقات. Band/NCK يبقيان قراءة فقط حتى توثيق الكتابة.")
         }
     }
 }
