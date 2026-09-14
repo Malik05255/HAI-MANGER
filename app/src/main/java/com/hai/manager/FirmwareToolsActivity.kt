@@ -109,9 +109,9 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
                 searchStage = "تحديث قاعدة المصادر"
                 searchProgress = 5
                 catalog.sync()
-                catalog.cachedJson()
+                catalog.firmwareJson()
             } else {
-                catalog.cachedJson()
+                catalog.firmwareJson()
             }
 
             val result = firmware.search(current, selectedSource, catalogJson) { progress, stage ->
