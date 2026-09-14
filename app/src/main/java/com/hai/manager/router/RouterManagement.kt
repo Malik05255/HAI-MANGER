@@ -3,6 +3,7 @@ package com.hai.manager.router
 import android.webkit.CookieManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -45,7 +46,7 @@ class RouterHttpClient(private val baseUrl: String) {
         connection.readTimeout = 3500
         connection.instanceFollowRedirects = true
         connection.requestMethod = method
-        connection.setRequestProperty("User-Agent", "HAI-MANAGER/0.3")
+        connection.setRequestProperty("User-Agent", "HAI-MANAGER/0.4")
         connection.setRequestProperty("Accept", "application/json, application/xml, text/xml, text/plain, */*")
         connection.setRequestProperty("Referer", baseUrl.trimEnd('/') + "/")
         connection.setRequestProperty("X-Requested-With", "XMLHttpRequest")
@@ -72,7 +73,7 @@ class RouterHttpClient(private val baseUrl: String) {
             val responseBody = stream?.bufferedReader()?.use { reader ->
                 buildString {
                     var total = 0
-                    while (total < 200_000) {
+                    while (total < 300_000) {
                         val line = reader.readLine() ?: break
                         append(line).append('\n')
                         total += line.length
@@ -115,6 +116,7 @@ class RouterInspectorService {
         val adapter = when (snapshot.brand) {
             RouterBrand.ZTE -> ZteOperationalAdapter
             RouterBrand.HUAWEI -> HuaweiOperationalAdapter
+            RouterBrand.NETGEAR -> NetgearOperationalAdapter
             else -> null
         } ?: return RouterInspection(
             snapshot = snapshot,
@@ -332,12 +334,161 @@ object HuaweiOperationalAdapter : OperationalRouterAdapter {
     }
 }
 
+object NetgearOperationalAdapter : OperationalRouterAdapter {
+    override val brand = RouterBrand.NETGEAR
+
+    override suspend fun inspect(client: RouterHttpClient, snapshot: RouterSnapshot): RouterInspection {
+        val response = client.get("/model.json")
+        if (response.code == 401 || response.code == 403 || looksLikeLogin(response.body)) {
+            return RouterInspection(
+                snapshot = snapshot,
+                accessStatus = RouterAccessStatus.AUTH_REQUIRED,
+                device = RouterDeviceInfo(manufacturer = "NETGEAR", model = snapshot.model),
+                capabilities = setOf(RouterCapability.SESSION_COOKIES),
+                message = "سجّل الدخول إلى Netgear WebUI ثم أعد الفحص لقراءة model.json"
+            )
+        }
+
+        val json = runCatching { JSONObject(response.body) }.getOrNull()
+            ?: return RouterInspection(
+                snapshot = snapshot,
+                accessStatus = RouterAccessStatus.FAILED,
+                device = RouterDeviceInfo(manufacturer = "NETGEAR", model = snapshot.model),
+                message = "تم العثور على Netgear لكن model.json لم يُقرأ بصيغة JSON"
+            )
+
+        val model = json.pathString("general.deviceName", "device.deviceName", "deviceName") ?: snapshot.model
+        val firmware = json.pathString(
+            "general.FWversion", "general.fwVersion", "device.FWversion", "FWversion", "fwVersion"
+        )
+        val device = RouterDeviceInfo(
+            manufacturer = json.pathString("general.companyName", "companyName") ?: "NETGEAR",
+            model = model,
+            serialNumber = json.pathString("general.serialNumber", "device.serialNumber", "serialNumber"),
+            imei = json.pathString("wwan.imei", "general.imei", "imei"),
+            firmwareVersion = firmware,
+            hardwareVersion = json.pathString("general.hardwareVersion", "device.hardwareVersion", "hardwareVersion"),
+            webUiVersion = json.pathString("general.apiVersion", "apiVersion"),
+            wanIp = json.pathString("wwan.IP", "wwan.ip", "wwan.ipv4Addr")
+        )
+
+        val lteRsrp = json.pathString("wwan.signalStrength.rsrp").cleanNetgearMetric()
+        val lteRsrq = json.pathString("wwan.signalStrength.rsrq").cleanNetgearMetric()
+        val lteSinr = json.pathString("wwan.signalStrength.sinr").cleanNetgearMetric()
+        val nrRsrp = json.pathString("wwan.signalStrength.nr5gRsrp").cleanNetgearMetric()
+        val nrRsrq = json.pathString("wwan.signalStrength.nr5gRsrq").cleanNetgearMetric()
+        val nrSinr = json.pathString("wwan.signalStrength.nr5gSinr").cleanNetgearMetric()
+        val primaryBand = json.pathString("wwanadv.curBand")
+        val caBands = extractNetgearBands(json)
+        val sccCount = json.pathString("wwan.ca.SCCcount")?.toIntOrNull() ?: 0
+
+        val signal = CellularSignal(
+            networkType = json.pathString("wwan.currentPSserviceType", "wwan.connectionText", "wwan.connection"),
+            networkPreference = json.currentNetgearBandRegion(),
+            operatorName = json.pathString("wwan.networkName", "wwan.operatorName"),
+            rsrp = nrRsrp ?: lteRsrp,
+            rsrq = nrRsrq ?: lteRsrq,
+            sinr = nrSinr ?: lteSinr,
+            rssi = json.pathString("wwan.signalStrength.rssi").cleanNetgearMetric(),
+            bands = (listOfNotNull(primaryBand) + caBands).distinct(),
+            primaryBand = primaryBand,
+            secondaryBands = caBands.filterNot { it.equals(primaryBand, true) },
+            nrBand = caBands.firstOrNull { it.contains("NR", true) || it.startsWith("N", true) },
+            carrierAggregation = sccCount > 0 || caBands.size > 1,
+            cellId = json.pathString("wwanadv.cellId"),
+            pci = json.pathString("wwanadv.primScode", "wwan.pci"),
+            earfcn = json.pathString("wwanadv.chanId"),
+            nrarfcn = json.pathString("wwan.nr5gChanId", "wwanadv.nr5gChanId")
+        )
+
+        val hasData = listOf(device.model, device.firmwareVersion, signal.networkType, signal.rsrp, signal.primaryBand)
+            .any { !it.isNullOrBlank() }
+        if (!hasData) {
+            return RouterInspection(
+                snapshot = snapshot,
+                accessStatus = RouterAccessStatus.FAILED,
+                device = device,
+                message = "Netgear استجاب، لكن model.json الحالي لا يحتوي حقول التشخيص المعروفة"
+            )
+        }
+
+        return RouterInspection(
+            snapshot = snapshot,
+            accessStatus = RouterAccessStatus.AVAILABLE,
+            device = device,
+            signal = signal.takeIf { it.hasData },
+            capabilities = setOf(
+                RouterCapability.DEVICE_INFO,
+                RouterCapability.CELLULAR_SIGNAL,
+                RouterCapability.NETWORK_STATUS,
+                RouterCapability.SESSION_COOKIES,
+                RouterCapability.FIRMWARE_INFO,
+                RouterCapability.CA_DETAILS
+            ),
+            message = "تمت قراءة تشخيص Netgear Nighthawk من model.json — وضع القراءة فقط"
+        )
+    }
+}
+
 private fun JSONObject.firstString(vararg keys: String): String? {
     for (key in keys) {
         val value = optString(key, "").trim()
         if (value.isMeaningful()) return value
     }
     return null
+}
+
+private fun JSONObject.pathString(vararg paths: String): String? {
+    for (path in paths) {
+        var current: Any? = this
+        for (part in path.split('.')) {
+            current = (current as? JSONObject)?.opt(part)
+            if (current == null || current == JSONObject.NULL) break
+        }
+        val value = when (current) {
+            is String -> current.trim()
+            is Number, is Boolean -> current.toString()
+            else -> null
+        }
+        if (value?.isMeaningful() == true) return value
+    }
+    return null
+}
+
+private fun JSONObject.currentNetgearBandRegion(): String? {
+    val regions = optJSONObject("wwan")?.optJSONArray("bandRegion") ?: optJSONArray("bandRegion") ?: return null
+    for (i in 0 until regions.length()) {
+        val entry = regions.optJSONObject(i) ?: continue
+        if (entry.optBoolean("current", false)) {
+            return entry.optString("name").takeIf { it.isMeaningful() }
+        }
+    }
+    return null
+}
+
+private fun extractNetgearBands(root: JSONObject): List<String> {
+    val wwan = root.optJSONObject("wwan") ?: return emptyList()
+    val values = mutableListOf<String>()
+    fun collect(array: JSONArray?) {
+        if (array == null) return
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            listOf("band", "lteBand", "bandName", "freqBand", "name").forEach { key ->
+                item.optString(key).trim().takeIf { it.isMeaningful() }?.let { values += it }
+            }
+        }
+    }
+    collect(wwan.optJSONObject("ca")?.optJSONArray("SCClist"))
+    collect(wwan.optJSONArray("lteBandInfo"))
+    collect(wwan.optJSONArray("nr5gBandInfo"))
+    return values.distinct()
+}
+
+private fun String?.cleanNetgearMetric(): String? {
+    val value = this?.trim()?.takeIf { it.isMeaningful() } ?: return null
+    val numeric = Regex("-?\\d+(?:\\.\\d+)?").find(value)?.value?.toDoubleOrNull()
+    if (numeric != null && numeric <= -300) return null
+    return value
 }
 
 private fun String?.cleanMetric(): String? = this?.trim()?.takeIf { it.isMeaningful() }
