@@ -3,11 +3,8 @@ package com.hai.manager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -27,7 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.dp
 import com.hai.manager.catalog.DeviceCatalogRepository
 import com.hai.manager.router.FirmwareCandidate
 import com.hai.manager.router.FirmwareSearchSource
@@ -84,6 +80,15 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
             runCatching { capabilityProbe.enrich(inspector.inspect(found)) }.getOrNull()
         } else null
         loading = false
+    }
+
+    fun chooseSource(source: FirmwareSearchSource) {
+        if (searching || installing) return
+        selectedSource = source
+        candidate = null
+        message = null
+        searchProgress = 0
+        searchStage = ""
     }
 
     fun searchUpdates() {
@@ -171,35 +176,33 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
 
                 HaiCard {
                     HaiSectionTitle("مصدر التحديث")
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        FirmwareSearchSource.entries.forEach { source ->
-                            if (selectedSource == source) {
-                                Button(
-                                    onClick = {
-                                        if (!searching && !installing) {
-                                            selectedSource = source
-                                            candidate = null
-                                            message = null
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
-                                ) { Text(source.displayName) }
-                            } else {
-                                OutlinedButton(
-                                    onClick = {
-                                        if (!searching && !installing) {
-                                            selectedSource = source
-                                            candidate = null
-                                            message = null
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
-                                ) { Text(source.displayName) }
-                            }
-                        }
+
+                    if (selectedSource == FirmwareSearchSource.OFFICIAL) {
+                        Button(
+                            onClick = { chooseSource(FirmwareSearchSource.OFFICIAL) },
+                            enabled = !searching && !installing,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        ) { Text(FirmwareSearchSource.OFFICIAL.displayName) }
+                    } else {
+                        OutlinedButton(
+                            onClick = { chooseSource(FirmwareSearchSource.OFFICIAL) },
+                            enabled = !searching && !installing,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        ) { Text(FirmwareSearchSource.OFFICIAL.displayName) }
+                    }
+
+                    if (selectedSource == FirmwareSearchSource.COMPANIES) {
+                        Button(
+                            onClick = { chooseSource(FirmwareSearchSource.COMPANIES) },
+                            enabled = !searching && !installing,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        ) { Text(FirmwareSearchSource.COMPANIES.displayName) }
+                    } else {
+                        OutlinedButton(
+                            onClick = { chooseSource(FirmwareSearchSource.COMPANIES) },
+                            enabled = !searching && !installing,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        ) { Text(FirmwareSearchSource.COMPANIES.displayName) }
                     }
 
                     Button(
@@ -220,10 +223,7 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
                 candidate?.let { update ->
                     HaiCard {
                         HaiSectionTitle("التحديث المتاح")
-                        Text(
-                            update.version,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Text(update.version, fontWeight = FontWeight.SemiBold)
                         HaiValueRow("المصدر", update.sourceLabel)
                         HaiValueRow("الحجم", update.size)
                         Text(update.summaryArabic)
