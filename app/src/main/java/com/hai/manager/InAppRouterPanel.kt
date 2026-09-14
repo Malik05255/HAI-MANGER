@@ -32,7 +32,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * بقي الاسم لأجل التوافق مع MainActivity، لكن هذه الشاشة Native بالكامل ولا تعرض WebUI/HTML الراوتر.
+ * الاسم الداخلي بقي للتوافق مع MainActivity، لكن الشاشة Native بالكامل ولا تعرض WebUI/HTML أو عنوان الإدارة للمستخدم.
  */
 @Composable
 fun InAppRouterPanel(
@@ -61,9 +61,17 @@ fun InAppRouterPanel(
         modifier = Modifier.fillMaxSize().padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("تسجيل الدخول إلى الراوتر", style = MaterialTheme.typography.headlineSmall)
+        Text("HAI MANAGER", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Text(
-            "كل العملية تتم داخل HAI MANAGER. لن يتم فتح صفحة Huawei أو ZTE الأصلية.",
+            when {
+                detecting -> "تجهيز الراوتر…"
+                brand == NativeRouterAuthBrand.UNKNOWN -> "تسجيل الدخول إلى الراوتر"
+                else -> "تسجيل الدخول إلى ${brand.displayName}"
+            },
+            style = MaterialTheme.typography.headlineSmall
+        )
+        Text(
+            "إدارة Huawei وZTE تتم مباشرة من التطبيق. لن تظهر لك صفحة الراوتر الأصلية.",
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f)
         )
 
@@ -73,8 +81,7 @@ fun InAppRouterPanel(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                DetailRow("نوع الراوتر", if (detecting) "جارٍ الاكتشاف…" else brand.displayName)
-                DetailRow("عنوان الإدارة", url.substringBefore("#").removeSuffix("/"))
+                DetailRow("الراوتر", if (detecting) "جارٍ التعرف…" else brand.displayName)
 
                 if (brand != NativeRouterAuthBrand.ZTE) {
                     OutlinedTextField(
@@ -87,7 +94,7 @@ fun InAppRouterPanel(
                     )
                 } else {
                     Text(
-                        "في ZTE يستخدم التطبيق كلمة مرور الإدارة مباشرة؛ اسم المستخدم غير مطلوب في أغلب WebUI المدعومة.",
+                        "ZTE يستخدم كلمة مرور الإدارة مباشرة في واجهات WebUI المدعومة.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f)
                     )
@@ -144,8 +151,8 @@ fun InAppRouterPanel(
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("بعد تسجيل الدخول", style = MaterialTheme.typography.titleMedium)
-                Text("ستعود مباشرة إلى HAI MANAGER وتظهر أدوات Wi‑Fi وSIM والشبكة وBand Lock وقفل المشغل حسب دعم Model + Firmware.")
-                Text("كلمة المرور لا تُحفظ. يحتفظ التطبيق فقط بجلسة الإدارة التي يصدرها الراوتر.", style = MaterialTheme.typography.bodySmall)
+                Text("تظهر أدوات Wi‑Fi وSIM والشبكة وBand Lock وقفل المشغل داخل HAI MANAGER حسب دعم Model + Firmware.")
+                Text("كلمة المرور لا تُحفظ؛ يحتفظ التطبيق فقط بجلسة الإدارة التي يصدرها الراوتر.", style = MaterialTheme.typography.bodySmall)
             }
         }
 
@@ -163,7 +170,7 @@ fun InAppRouterPanel(
                 },
                 enabled = !busy,
                 modifier = Modifier.weight(1f)
-            ) { Text("إعادة الاكتشاف") }
+            ) { Text("إعادة التعرف") }
         }
     }
 }
