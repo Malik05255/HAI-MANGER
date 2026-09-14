@@ -161,6 +161,7 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
     var actionMessage by remember { mutableStateOf<String?>(null) }
     var confirmReboot by remember { mutableStateOf(false) }
     var nrBands by remember { mutableStateOf("78") }
+    var routerPanelUrl by remember { mutableStateOf<String?>(null) }
 
     fun scan() {
         scope.launch {
@@ -201,6 +202,17 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
         )
     }
 
+    routerPanelUrl?.let { url ->
+        InAppRouterPanel(
+            url = url,
+            onClose = {
+                routerPanelUrl = null
+                scan()
+            }
+        )
+        return
+    }
+
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -232,9 +244,9 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
                 }
                 router?.managementUrl?.let { url ->
                     OutlinedButton(
-                        onClick = { context.startActivity(Intent(context, RouterLoginActivity::class.java).putExtra(RouterLoginActivity.EXTRA_URL, url)) },
+                        onClick = { routerPanelUrl = url },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("تسجيل الدخول إلى الراوتر") }
+                    ) { Text("فتح إعدادات الراوتر داخل التطبيق") }
                     if (router?.brand == RouterBrand.ZTE || router?.brand == RouterBrand.HUAWEI) {
                         OutlinedButton(
                             onClick = { context.startActivity(Intent(context, WifiToolsActivity::class.java).putExtra(WifiToolsActivity.EXTRA_URL, url)) },
@@ -338,6 +350,8 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
             }
         }
 
+        inspection?.let { RouterCarrierLockCard(it) }
+
         inspection?.signal?.takeIf { it.hasData }?.let { SignalCard(it) }
 
         inspection?.let { current ->
@@ -428,7 +442,7 @@ private fun SignalCard(signal: CellularSignal) {
 }
 
 @Composable
-private fun SimpleCard(title: String, content: @Composable () -> Unit) {
+internal fun SimpleCard(title: String, content: @Composable () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -442,7 +456,7 @@ private fun SimpleCard(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun DetailRow(label: String, value: String) {
+internal fun DetailRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f))
         Text(value)
@@ -450,7 +464,7 @@ private fun DetailRow(label: String, value: String) {
 }
 
 @Composable
-private fun OptionalDetailRow(label: String, value: String?) {
+internal fun OptionalDetailRow(label: String, value: String?) {
     value?.takeIf { it.isNotBlank() }?.let { DetailRow(label, it) }
 }
 
