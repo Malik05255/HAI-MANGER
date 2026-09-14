@@ -58,6 +58,7 @@ class RouterCapabilityProbeService {
             client.get(
                 "/goform/goform_get_cmd_process?isTest=false&cmd=" +
                     "wa_inner_version,cr_version,RD,BearerPreference,current_network_mode," +
+                    "lte_band_lock,lte_band_mask,lte_band,wan_active_band," +
                     "nr5g_band_mask,nr5g_band,nr5g_action_band,network_lock_status,network_lock," +
                     "network_unlock_remain_count,unlock_nck_time,wifiEnabled,SSID1&multi_data=1"
             )
@@ -85,6 +86,8 @@ class RouterCapabilityProbeService {
 
         val actionSeedReady = listOf(value("wa_inner_version"), value("cr_version"), value("RD")).all { it != null }
         val networkMode = value("BearerPreference", "current_network_mode")
+        val lteRaw = value("lte_band_lock", "lte_band_mask", "lte_band", "wan_active_band")
+        val lteList = lteRaw?.let(::parseSimpleBandList).orEmpty()
         val nrRaw = value("nr5g_band_mask", "nr5g_band", "nr5g_action_band")
         val nrList = nrRaw?.let(::parseSimpleBandList).orEmpty()
         val lockState = value("network_lock_status", "network_lock")
@@ -97,7 +100,8 @@ class RouterCapabilityProbeService {
         val items = listOf(
             item("zte_action_seed", "مفتاح أوامر ZTE", actionSeedReady, if (actionSeedReady) "wa/cr/RD متاحة" else null),
             item("network_mode_read", "قراءة وضع الشبكة", networkMode != null, networkMode),
-            item("nr_band_state", "قراءة حالة Band Lock", nrRaw != null, nrRaw),
+            item("lte_band_state", "قراءة حالة LTE Band", lteRaw != null, lteRaw),
+            item("nr_band_state", "قراءة حالة NR Band", nrRaw != null, nrRaw),
             item("network_lock_read", "قراءة Network Lock", lockState != null || lockAttempts != null, lockDetail),
             item("wifi_read", "قراءة Wi-Fi", wifiVisible),
             CapabilityProbeItem(
@@ -108,14 +112,21 @@ class RouterCapabilityProbeService {
             )
         )
 
+        val ambiguousLte = lteRaw != null && lteList.isEmpty()
+        val ambiguousNr = nrRaw != null && nrList.isEmpty()
         return RouterCapabilityReport(
             firmwareFingerprint = fingerprint(inspection),
             items = items,
             bandSelection = BandSelectionDiagnostics(
                 source = "ZTE goform",
+                lteBandMaskRaw = lteRaw,
                 nrBandMaskRaw = nrRaw,
+                decodedLteBands = lteList,
                 decodedNrBands = nrList,
-                note = if (nrRaw != null && nrList.isEmpty()) "القيمة موجودة لكن ترميزها غير قابل للتفسير الآمن؛ لا تستخدم للكتابة." else null
+                note = when {
+                    ambiguousLte || ambiguousNr -> "توجد قيمة Band غير قابلة للتفسير كقائمة نطاقات مباشرة؛ تبقى للـdiagnostics فقط ولا تستخدم للكتابة."
+                    else -> null
+                }
             ),
             networkLockReadable = lockState != null || lockAttempts != null,
             nckEntryVerified = false,
@@ -148,6 +159,7 @@ class RouterCapabilityProbeService {
         val lteMask = mode?.body?.let { xmlValue(it, "LTEBand") }
         val nrMask = mode?.body?.let { xmlValue(it, "NR5GBand", "NRBand") }
         val lteBands = decodeHuaweiLteMask(lteMask)
+        val nrBands = nrMask?.let(::parseSimpleBandList).orEmpty()
         val advertisedBands = modeList?.body?.let(::extractHuaweiAdvertisedLteBands).orEmpty()
         val tokenValue = token?.body?.let { xmlValue(it, "TokInfo") }
         val pinState = pin?.body?.let { xmlValue(it, "SimState", "PinOptState", "SimPinState") }
@@ -174,6 +186,7 @@ class RouterCapabilityProbeService {
             CapabilityProbeItem("nck_write", "إدخال NCK", CapabilityProbeStatus.NOT_EXPOSED, "لا يوجد endpoint كتابة موثق في Profile الحالي")
         )
 
+        val nrAmbiguous = nrMask != null && nrBands.isEmpty()
         RouterCapabilityReport(
             firmwareFingerprint = fingerprint(inspection),
             items = items,
@@ -183,8 +196,13 @@ class RouterCapabilityProbeService {
                 lteBandMaskRaw = lteMask,
                 nrBandMaskRaw = nrMask,
                 decodedLteBands = lteBands,
+                decodedNrBands = nrBands,
                 advertisedLteBands = advertisedBands,
-                note = "فك LTEBand تشخيصي فقط؛ لا يمنح صلاحية كتابة Band Lock."
+                note = if (nrAmbiguous) {
+                    "LTEBand يُفك تشخيصيًا. NRBand موجود لكن ترميزه ليس قائمة واضحة، لذلك يبقى raw فقط ولا يمنح صلاحية كتابة."
+                } else {
+                    "فك LTEBand/NRBand تشخيصي فقط؛ لا يمنح صلاحية كتابة Band Lock."
+                }
             ),
             networkLockReadable = lockReadable,
             nckEntryVerified = false,
