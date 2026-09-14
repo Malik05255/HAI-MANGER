@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.Inet4Address
@@ -31,21 +33,34 @@ class RouterDiscoveryService(private val context: Context) {
 
         val probes = listOf("http://$gateway", "https://$gateway")
         for (candidate in probes) {
-            val probe = runCatching { probe(candidate) }.getOrNull() ?: continue
-            val winner = RouterAdapters.all
-                .map { adapter -> adapter to adapter.confidence(probe.body, probe.headers) }
+            val rootProbe = runCatching { probe(candidate) }.getOrNull() ?: continue
+            val passiveWinner = RouterAdapters.all
+                .map { adapter -> adapter to adapter.confidence(rootProbe.body, rootProbe.headers) }
                 .maxByOrNull { it.second }
-            val brand = winner?.takeIf { it.second > 0 }?.first?.brand ?: RouterBrand.UNKNOWN
-            val confidence = winner?.second ?: 0
+
+            val passiveBrand = passiveWinner?.takeIf { it.second > 0 }?.first?.brand ?: RouterBrand.UNKNOWN
+            val passiveConfidence = passiveWinner?.second ?: 0
+            val active = if (passiveConfidence < 80) activeFingerprint(candidate) else null
+            val brand = active?.brand ?: passiveBrand
+            val confidence = active?.confidence ?: passiveConfidence
+            val evidence = buildString {
+                append(rootProbe.body)
+                active?.evidence?.let { append('\n').append(it) }
+            }
+
             return@withContext RouterSnapshot(
                 connected = true,
                 gateway = gateway,
                 managementUrl = candidate,
                 brand = brand,
-                model = detectModel(probe.body),
-                pageTitle = detectTitle(probe.body),
+                model = detectModel(evidence),
+                pageTitle = detectTitle(rootProbe.body),
                 confidence = confidence,
-                message = if (brand == RouterBrand.UNKNOWN) "تم العثور على الراوتر وسيتم تحسين التعرف عليه" else "تم التعرف على الراوتر"
+                message = when {
+                    active != null -> "تم التعرف على الراوتر عبر واجهة الإدارة"
+                    brand == RouterBrand.UNKNOWN -> "تم العثور على الراوتر وسيتم تحسين التعرف عليه"
+                    else -> "تم التعرف على الراوتر"
+                }
             )
         }
 
@@ -56,13 +71,40 @@ class RouterDiscoveryService(private val context: Context) {
         )
     }
 
-    private fun probe(url: String): ProbeResult {
+    private suspend fun activeFingerprint(baseUrl: String): ActiveFingerprint? = coroutineScope {
+        val base = baseUrl.trimEnd('/')
+        val zteDeferred = async {
+            runCatching {
+                probe(
+                    "$base/goform/goform_get_cmd_process?isTest=false&cmd=DeviceName,model_name,product_name&multi_data=1",
+                    timeoutMs = 1600
+                )
+            }.getOrNull()
+        }
+        val huaweiDeferred = async {
+            runCatching {
+                probe("$base/api/device/information", timeoutMs = 1600)
+            }.getOrNull()
+        }
+
+        val zte = zteDeferred.await()
+        val huawei = huaweiDeferred.await()
+
+        when {
+            zte?.looksLikeZteApi() == true -> ActiveFingerprint(RouterBrand.ZTE, 96, zte.body)
+            huawei?.looksLikeHuaweiApi() == true -> ActiveFingerprint(RouterBrand.HUAWEI, 96, huawei.body)
+            else -> null
+        }
+    }
+
+    private fun probe(url: String, timeoutMs: Int = 2200): ProbeResult {
         val connection = URL(url).openConnection() as HttpURLConnection
-        connection.connectTimeout = 2200
-        connection.readTimeout = 2200
+        connection.connectTimeout = timeoutMs
+        connection.readTimeout = timeoutMs
         connection.instanceFollowRedirects = true
         connection.requestMethod = "GET"
-        connection.setRequestProperty("User-Agent", "HAI-MANAGER/0.1")
+        connection.setRequestProperty("User-Agent", "HAI-MANAGER/0.2")
+        connection.setRequestProperty("Accept", "application/json, application/xml, text/html, */*")
         return try {
             val code = connection.responseCode
             val stream = if (code in 200..399) connection.inputStream else connection.errorStream
@@ -79,10 +121,36 @@ class RouterDiscoveryService(private val context: Context) {
             val headers = connection.headerFields
                 .filterKeys { it != null }
                 .mapValues { (_, values) -> values.orEmpty().joinToString(";") }
-            ProbeResult(body, headers)
+            ProbeResult(code, body, headers)
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun ProbeResult.looksLikeZteApi(): Boolean {
+        val text = body.lowercase()
+        if (code == 404) return false
+        return text.trimStart().startsWith("{") && (
+            "\"devicename\"" in text ||
+                "\"model_name\"" in text ||
+                "\"product_name\"" in text ||
+                "\"result\":\"failure\"" in text.replace(" ", "")
+            )
+    }
+
+    private fun ProbeResult.looksLikeHuaweiApi(): Boolean {
+        val text = body.lowercase()
+        if (code == 404) return false
+        val responseShape = "<response" in text && (
+            "<devicename>" in text ||
+                "<productfamily>" in text ||
+                "<serialnumber>" in text ||
+                "<imei>" in text
+            )
+        val knownAuthError = "<error>" in text && (
+            "125002" in text || "125003" in text || "100003" in text
+            )
+        return responseShape || knownAuthError
     }
 
     private fun detectTitle(body: String): String? =
@@ -91,15 +159,23 @@ class RouterDiscoveryService(private val context: Context) {
 
     private fun detectModel(body: String): String? {
         val models = listOf(
-            "MC888", "MC888 Pro", "MC801A", "MC889",
+            "MC888 Pro", "MC888", "MC801A", "MC889",
             "H155-381", "H158-381", "B818", "B535", "B525",
-            "FastMile", "Nighthawk M6", "Nighthawk M5"
+            "FastMile 5G Gateway", "FastMile", "Nighthawk M6", "Nighthawk M5",
+            "MR6150", "MR5200", "Archer MR600", "Archer NX200", "NR5103E", "DWR-2101"
         )
         return models.firstOrNull { body.contains(it, ignoreCase = true) }
     }
 
     private data class ProbeResult(
+        val code: Int,
         val body: String,
         val headers: Map<String, String>
+    )
+
+    private data class ActiveFingerprint(
+        val brand: RouterBrand,
+        val confidence: Int,
+        val evidence: String
     )
 }
