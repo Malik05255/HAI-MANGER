@@ -253,8 +253,9 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
             SimpleCard("SIM وقفل الشبكة") {
                 OptionalDetailRow("حالة SIM", security.simState)
                 OptionalDetailRow("حالة PIN", security.pinState)
+                OptionalDetailRow("محاولات PIN المتبقية", security.pinAttemptsRemaining)
                 OptionalDetailRow("قفل الشبكة", security.networkLockState)
-                OptionalDetailRow("محاولات الفك المتبقية", security.unlockAttemptsRemaining)
+                OptionalDetailRow("محاولات فك الشبكة المتبقية", security.unlockAttemptsRemaining)
                 OptionalDetailRow("ICCID", security.iccid)
                 OptionalDetailRow("IMSI", security.imsi)
             }

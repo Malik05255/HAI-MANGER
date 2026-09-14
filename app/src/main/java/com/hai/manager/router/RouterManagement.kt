@@ -294,8 +294,11 @@ object HuaweiOperationalAdapter : OperationalRouterAdapter {
             simState = pinResponse?.body?.let { xmlValue(it, "SimState") }
                 ?: statusResponse?.body?.let { xmlValue(it, "SimStatus") },
             pinState = pinResponse?.body?.let { xmlValue(it, "PinOptState", "SimPinState") },
+            pinAttemptsRemaining = pinResponse?.body?.let { xmlValue(it, "SimPinTimes", "PinTimes") },
             networkLockState = infoResponse.body.let { xmlValue(it, "SimLock", "SimlockStatus", "NetworkLock") },
-            unlockAttemptsRemaining = pinResponse?.body?.let { xmlValue(it, "SimPinTimes", "PinTimes") },
+            unlockAttemptsRemaining = infoResponse.body.let {
+                xmlValue(it, "NetworkUnlockRemainCount", "SimlockRemainTimes", "NetworkLockRemainTimes")
+            },
             iccid = xmlValue(infoResponse.body, "Iccid", "ICCID"),
             imsi = xmlValue(infoResponse.body, "Imsi", "IMSI")
         )
