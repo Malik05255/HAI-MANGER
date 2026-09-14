@@ -1,13 +1,13 @@
 {
-  "versionCode": 12,
-  "versionName": "0.8.0",
+  "versionCode": 13,
+  "versionName": "0.9.0",
   "apkUrl": "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/HAI-MANAGER.apk",
   "notes": "Huawei وZTE: Firmware Profile Engine، توسيع Band Lock لـ ZTE 5G عبر preflight آمن، وإظهار حالة NCK كموثق/قراءة فقط حسب Model + Firmware.",
   "mandatory": false,
   "signatureStable": true,
   "signingCertSha256": "D59B0F985ED8CF4A903938B7904A5F33EDA01E8817E994B6A20D78D164BC2441",
-  "sha256": "C5C173BE431D283174161B26E402D69F67549688166BB097BA188A0096A506BA",
+  "sha256": "B0926E16FC42A892FB93E1AC2B7E09B5B35709B70BD219AAD07A0C4FFF303346",
   "channel": "beta",
-  "publishedAt": "2026-09-14T21:28:19Z",
-  "catalogVersion": 9
+  "publishedAt": "2026-09-14T21:38:04Z",
+  "catalogVersion": 10
 }
