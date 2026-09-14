@@ -28,7 +28,7 @@ class RouterLoginActivity : Activity() {
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
         val hint = TextView(this).apply {
-            text = "سجّل الدخول إلى لوحة الراوتر. بعد نجاح الدخول يمكنك العودة للفحص أو فتح أدوات Wi-Fi."
+            text = "سجّل الدخول إلى لوحة الراوتر. بعد نجاح الدخول يمكنك إدارة Wi-Fi أو SIM ثم الرجوع للفحص."
             textSize = 16f
             setPadding(24, 20, 24, 16)
         }
@@ -37,6 +37,13 @@ class RouterLoginActivity : Activity() {
             setOnClickListener {
                 CookieManager.getInstance().flush()
                 startActivity(Intent(this@RouterLoginActivity, WifiToolsActivity::class.java).putExtra(WifiToolsActivity.EXTRA_URL, url))
+            }
+        }
+        val simTools = Button(this).apply {
+            text = "إدارة SIM"
+            setOnClickListener {
+                CookieManager.getInstance().flush()
+                startActivity(Intent(this@RouterLoginActivity, SimToolsActivity::class.java).putExtra(SimToolsActivity.EXTRA_URL, url))
             }
         }
         val done = Button(this).apply {
@@ -62,6 +69,7 @@ class RouterLoginActivity : Activity() {
 
         root.addView(hint)
         root.addView(wifiTools)
+        root.addView(simTools)
         root.addView(done)
         root.addView(webView)
         setContentView(root)

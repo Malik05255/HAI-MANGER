@@ -15,6 +15,7 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.HAIManager">
+        <activity android:name=".SimToolsActivity" android:exported="false" />
         <activity android:name=".WifiToolsActivity" android:exported="false" />
         <activity android:name=".RouterLoginActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true">

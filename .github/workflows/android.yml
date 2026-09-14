@@ -119,7 +119,7 @@ jobs:
             "versionCode": $VERSION_CODE,
             "versionName": "$VERSION_NAME",
             "apkUrl": "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/HAI-MANAGER.apk",
-            "notes": "تركيز المرحلة الأولى على Huawei وZTE: توسيع التعرف على الموديلات، قراءة SIM وقفل الشبكة، تحسين معلومات الشبكة، وإدارة Wi-Fi من الواجهة.",
+            "notes": "Huawei وZTE: إضافة إدارة SIM الآمنة، إدخال PIN/PUK عند طلب الراوتر فقط، قراءة محاولات PIN/PUK وقفل الشبكة، والتحقق من حالة SIM بعد التنفيذ.",
             "mandatory": false,
             "signatureStable": true,
             "signingCertSha256": "$EXPECTED_SIGNING_CERT_SHA256",

@@ -44,13 +44,14 @@ data class RouterSecurityInfo(
     val simState: String? = null,
     val pinState: String? = null,
     val pinAttemptsRemaining: String? = null,
+    val pukAttemptsRemaining: String? = null,
     val networkLockState: String? = null,
     val unlockAttemptsRemaining: String? = null,
     val iccid: String? = null,
     val imsi: String? = null
 ) {
     val hasData: Boolean
-        get() = listOf(simState, pinState, pinAttemptsRemaining, networkLockState, unlockAttemptsRemaining, iccid, imsi)
+        get() = listOf(simState, pinState, pinAttemptsRemaining, pukAttemptsRemaining, networkLockState, unlockAttemptsRemaining, iccid, imsi)
             .any { !it.isNullOrBlank() }
 }
 
