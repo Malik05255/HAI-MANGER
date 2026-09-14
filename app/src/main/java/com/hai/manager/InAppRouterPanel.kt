@@ -1,11 +1,5 @@
 package com.hai.manager
 
-import android.annotation.SuppressLint
-import android.graphics.Bitmap
-import android.webkit.CookieManager
-import android.webkit.WebChromeClient
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,121 +7,163 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import com.hai.manager.router.NativeRouterAuthBrand
+import com.hai.manager.router.RouterAuthService
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
-@SuppressLint("SetJavaScriptEnabled")
+/**
+ * بقي الاسم لأجل التوافق مع MainActivity، لكن هذه الشاشة Native بالكامل ولا تعرض WebUI/HTML الراوتر.
+ */
 @Composable
 fun InAppRouterPanel(
     url: String,
     onClose: () -> Unit
 ) {
-    val context = LocalContext.current
-    var loading by remember { mutableStateOf(true) }
-    var currentUrl by remember(url) { mutableStateOf(url) }
-    var canGoBack by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val auth = remember(url) { RouterAuthService(url) }
+    var brand by remember(url) { mutableStateOf(NativeRouterAuthBrand.UNKNOWN) }
+    var detecting by remember(url) { mutableStateOf(true) }
+    var username by remember(url) { mutableStateOf("admin") }
+    var password by remember(url) { mutableStateOf("") }
+    var busy by remember(url) { mutableStateOf(false) }
+    var message by remember(url) { mutableStateOf<String?>(null) }
+    var success by remember(url) { mutableStateOf(false) }
 
-    val webView = remember(context, url) {
-        WebView(context).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.allowFileAccess = false
-            settings.allowContentAccess = false
-            settings.javaScriptCanOpenWindowsAutomatically = false
-            settings.setSupportMultipleWindows(false)
-            webChromeClient = WebChromeClient()
-            webViewClient = object : WebViewClient() {
-                override fun onPageStarted(view: WebView?, pageUrl: String?, favicon: Bitmap?) {
-                    loading = true
-                    currentUrl = pageUrl.orEmpty()
-                    canGoBack = view?.canGoBack() == true
-                }
-
-                override fun onPageFinished(view: WebView?, pageUrl: String?) {
-                    CookieManager.getInstance().flush()
-                    loading = false
-                    currentUrl = pageUrl.orEmpty()
-                    canGoBack = view?.canGoBack() == true
-                }
-            }
-            CookieManager.getInstance().setAcceptCookie(true)
-            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-            loadUrl(url)
-        }
+    LaunchedEffect(url) {
+        detecting = true
+        brand = runCatching { auth.detectBrand() }.getOrDefault(NativeRouterAuthBrand.UNKNOWN)
+        detecting = false
     }
 
-    BackHandler {
-        if (webView.canGoBack()) {
-            webView.goBack()
-            canGoBack = webView.canGoBack()
-        } else {
-            CookieManager.getInstance().flush()
-            onClose()
-        }
-    }
-
-    DisposableEffect(webView) {
-        onDispose {
-            CookieManager.getInstance().flush()
-            webView.stopLoading()
-            webView.destroy()
-        }
-    }
+    BackHandler(enabled = !busy) { onClose() }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = Modifier.fillMaxSize().padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("إعدادات الراوتر", style = MaterialTheme.typography.titleLarge)
+        Text("تسجيل الدخول إلى الراوتر", style = MaterialTheme.typography.headlineSmall)
         Text(
-            currentUrl,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
-            maxLines = 1
+            "كل العملية تتم داخل HAI MANAGER. لن يتم فتح صفحة Huawei أو ZTE الأصلية.",
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f)
         )
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                DetailRow("نوع الراوتر", if (detecting) "جارٍ الاكتشاف…" else brand.displayName)
+                DetailRow("عنوان الإدارة", url.substringBefore("#").removeSuffix("/"))
+
+                if (brand != NativeRouterAuthBrand.ZTE) {
+                    OutlinedTextField(
+                        value = username,
+                        onValueChange = { username = it },
+                        label = { Text("اسم المستخدم") },
+                        singleLine = true,
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    Text(
+                        "في ZTE يستخدم التطبيق كلمة مرور الإدارة مباشرة؛ اسم المستخدم غير مطلوب في أغلب WebUI المدعومة.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f)
+                    )
+                }
+
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("كلمة مرور الإدارة") },
+                    singleLine = true,
+                    enabled = !busy,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Button(
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            message = null
+                            val result = auth.login(username.trim(), password)
+                            busy = false
+                            brand = result.brand
+                            message = result.message
+                            success = result.success
+                            if (result.success) {
+                                password = ""
+                                delay(350)
+                                onClose()
+                            }
+                        }
+                    },
+                    enabled = !busy && !detecting && password.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (busy) CircularProgressIndicator(strokeWidth = 2.dp)
+                    else Text("تسجيل الدخول")
+                }
+
+                message?.let {
+                    Text(
+                        it,
+                        color = if (success) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("بعد تسجيل الدخول", style = MaterialTheme.typography.titleMedium)
+                Text("ستعود مباشرة إلى HAI MANAGER وتظهر أدوات Wi‑Fi وSIM والشبكة وBand Lock وقفل المشغل حسب دعم Model + Firmware.")
+                Text("كلمة المرور لا تُحفظ. يحتفظ التطبيق فقط بجلسة الإدارة التي يصدرها الراوتر.", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onClose, enabled = !busy, modifier = Modifier.weight(1f)) {
+                Text("إلغاء")
+            }
             OutlinedButton(
                 onClick = {
-                    if (webView.canGoBack()) {
-                        webView.goBack()
-                        canGoBack = webView.canGoBack()
+                    scope.launch {
+                        detecting = true
+                        brand = runCatching { auth.detectBrand() }.getOrDefault(NativeRouterAuthBrand.UNKNOWN)
+                        detecting = false
                     }
                 },
-                enabled = canGoBack,
+                enabled = !busy,
                 modifier = Modifier.weight(1f)
-            ) { Text("رجوع") }
-            OutlinedButton(
-                onClick = { webView.reload() },
-                modifier = Modifier.weight(1f)
-            ) { Text("تحديث") }
-            Button(
-                onClick = {
-                    CookieManager.getInstance().flush()
-                    onClose()
-                },
-                modifier = Modifier.weight(1f)
-            ) { Text("إغلاق") }
+            ) { Text("إعادة الاكتشاف") }
         }
-        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-        AndroidView(
-            factory = { webView },
-            modifier = Modifier.fillMaxSize(),
-            update = { view ->
-                if (view.url.isNullOrBlank()) view.loadUrl(url)
-            }
-        )
     }
 }
