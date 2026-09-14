@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.hai.manager.catalog.DeviceCatalogRepository
 import com.hai.manager.router.FirmwareCandidate
+import com.hai.manager.router.FirmwareFinding
 import com.hai.manager.router.FirmwareSearchSource
 import com.hai.manager.router.RouterCapabilityProbeService
 import com.hai.manager.router.RouterDiscoveryService
@@ -62,6 +63,7 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
     var inspection by remember { mutableStateOf<RouterInspection?>(null) }
     var selectedSource by remember { mutableStateOf(FirmwareSearchSource.OFFICIAL) }
     var candidate by remember { mutableStateOf<FirmwareCandidate?>(null) }
+    var findings by remember { mutableStateOf<List<FirmwareFinding>>(emptyList()) }
     var message by remember { mutableStateOf<String?>(null) }
 
     var searching by remember { mutableStateOf(false) }
@@ -87,6 +89,7 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
         if (searching || installing) return
         selectedSource = source
         candidate = null
+        findings = emptyList()
         message = null
         searchProgress = 0
         searchStage = ""
@@ -97,12 +100,13 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
         scope.launch {
             searching = true
             candidate = null
+            findings = emptyList()
             message = null
             searchProgress = 0
             searchStage = "بدء البحث"
 
             val catalogJson = if (selectedSource == FirmwareSearchSource.COMPANIES) {
-                searchStage = "تحديث قاعدة التوافق"
+                searchStage = "تحديث قاعدة المصادر"
                 searchProgress = 5
                 catalog.sync()
                 catalog.cachedJson()
@@ -115,6 +119,7 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
                 searchStage = stage
             }
             candidate = result.candidate
+            findings = result.findings
             message = result.message
             searching = false
         }
@@ -239,6 +244,20 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
                         enabled = update.installable && !searching && !installing,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
                     ) { Text("تنفيذ التحديث") }
+                }
+
+                if (findings.isNotEmpty()) {
+                    HaiCard {
+                        HaiSectionTitle("ما وجده التطبيق")
+                        findings.forEachIndexed { index, finding ->
+                            if (index > 0) Text("—")
+                            Text(finding.version, fontWeight = FontWeight.SemiBold)
+                            HaiValueRow("المصدر", finding.sourceLabel)
+                            HaiValueRow("الثقة", finding.trustLabel)
+                            HaiValueRow("الحالة", finding.statusLabel)
+                            Text(finding.summaryArabic)
+                        }
+                    }
                 }
 
                 if (installing) {
