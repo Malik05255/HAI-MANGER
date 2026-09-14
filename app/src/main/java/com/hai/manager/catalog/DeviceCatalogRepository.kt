@@ -9,7 +9,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 private const val CATALOG_URL = "https://raw.githubusercontent.com/Malik05255/HAI-MANGER/main/device-catalog.json"
+private const val FIRMWARE_SOURCES_URL = "https://raw.githubusercontent.com/Malik05255/HAI-MANGER/main/firmware-sources.json"
 private const val BUNDLED_CATALOG_ASSET = "device-catalog.json"
+private const val BUNDLED_FIRMWARE_SOURCES_ASSET = "firmware-sources.json"
 
 data class CatalogStatus(
     val version: Int,
@@ -23,6 +25,7 @@ class DeviceCatalogRepository(context: Context) {
 
     init {
         seedBundledCatalog()
+        seedBundledFirmwareSources()
         primeCache()
     }
 
@@ -32,14 +35,36 @@ class DeviceCatalogRepository(context: Context) {
         updatedAt = preferences.getString("updatedAt", "لم يتم التحديث بعد").orEmpty()
     )
 
-    fun cachedJson(): String? = preferences.getString("raw", null) ?: bundledJson()
+    fun cachedJson(): String? = preferences.getString("raw", null) ?: bundledCatalogJson()
+
+    /**
+     * Returns the normal device catalog plus the separately maintained firmware-discovery index.
+     * Firmware findings are informational only; they never grant install permission by themselves.
+     */
+    fun firmwareJson(): String? {
+        val catalogRaw = cachedJson() ?: return null
+        val sourcesRaw = preferences.getString("firmwareSourcesRaw", null) ?: bundledFirmwareSourcesJson()
+        return runCatching {
+            val catalog = JSONObject(catalogRaw)
+            if (!sourcesRaw.isNullOrBlank()) {
+                val sources = JSONObject(sourcesRaw)
+                sources.optJSONArray("firmwareFindings")?.let { catalog.put("firmwareFindings", it) }
+                catalog.put("firmwareSourceVersion", sources.optInt("sourceVersion", 0))
+            }
+            catalog.toString()
+        }.getOrElse { catalogRaw }
+    }
 
     fun primeCache() {
         LiveFirmwareProfileCache.update(cachedJson())
     }
 
     suspend fun sync(): CatalogStatus? = withContext(Dispatchers.IO) {
-        val remote = downloadRemoteCatalog()
+        // Source discovery is independent from the capability catalog. If one endpoint fails,
+        // the other still works and the bundled fallback remains available.
+        downloadJson(FIRMWARE_SOURCES_URL)?.let { persistFirmwareSources(it) }
+
+        val remote = downloadJson(CATALOG_URL)
         if (!remote.isNullOrBlank()) {
             persistCatalog(remote)?.let { return@withContext it }
         }
@@ -56,7 +81,7 @@ class DeviceCatalogRepository(context: Context) {
     }
 
     private fun seedBundledCatalog() {
-        val bundled = bundledJson() ?: return
+        val bundled = bundledCatalogJson() ?: return
         val bundledStatus = parseStatus(bundled) ?: return
         val storedVersion = preferences.getInt("version", 0)
         val hasStoredRaw = !preferences.getString("raw", null).isNullOrBlank()
@@ -66,12 +91,21 @@ class DeviceCatalogRepository(context: Context) {
         }
     }
 
-    private fun bundledJson(): String? = runCatching {
-        appContext.assets.open(BUNDLED_CATALOG_ASSET).bufferedReader().use { it.readText() }
+    private fun seedBundledFirmwareSources() {
+        if (!preferences.getString("firmwareSourcesRaw", null).isNullOrBlank()) return
+        bundledFirmwareSourcesJson()?.let { persistFirmwareSources(it) }
+    }
+
+    private fun bundledCatalogJson(): String? = readAsset(BUNDLED_CATALOG_ASSET)
+
+    private fun bundledFirmwareSourcesJson(): String? = readAsset(BUNDLED_FIRMWARE_SOURCES_ASSET)
+
+    private fun readAsset(name: String): String? = runCatching {
+        appContext.assets.open(name).bufferedReader().use { it.readText() }
     }.getOrNull()
 
-    private fun downloadRemoteCatalog(): String? = runCatching {
-        val connection = URL(CATALOG_URL).openConnection() as HttpURLConnection
+    private fun downloadJson(url: String): String? = runCatching {
+        val connection = URL(url).openConnection() as HttpURLConnection
         connection.connectTimeout = 6000
         connection.readTimeout = 6000
         connection.instanceFollowRedirects = true
@@ -97,6 +131,16 @@ class DeviceCatalogRepository(context: Context) {
             .apply()
         LiveFirmwareProfileCache.update(raw)
         return status
+    }
+
+    private fun persistFirmwareSources(raw: String): Boolean {
+        val valid = runCatching {
+            val json = JSONObject(raw)
+            json.optInt("sourceVersion") > 0 && json.optJSONArray("firmwareFindings") != null
+        }.getOrDefault(false)
+        if (!valid) return false
+        preferences.edit().putString("firmwareSourcesRaw", raw).apply()
+        return true
     }
 
     private fun parseStatus(raw: String): CatalogStatus? = runCatching {
