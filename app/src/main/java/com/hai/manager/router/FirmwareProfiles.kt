@@ -24,7 +24,15 @@ data class FirmwareProfileInfo(
     val firmware: String,
     val bandLock: ProfileActionSupport,
     val nckEntry: ProfileActionSupport,
+    val requiredProbes: Set<String> = emptySet(),
     val notes: String
+)
+
+data class ProfileProbeReadiness(
+    val ready: Boolean,
+    val required: Set<String>,
+    val missing: Set<String>,
+    val message: String
 )
 
 val RouterInspection.firmwareProfileInfo: FirmwareProfileInfo
@@ -43,6 +51,25 @@ val RouterInspection.firmwareProfileInfo: FirmwareProfileInfo
             firmware = firmware
         ) ?: return baseline
         return mergeConservatively(baseline, live)
+    }
+
+val RouterInspection.profileProbeReadiness: ProfileProbeReadiness
+    get() {
+        val required = firmwareProfileInfo.requiredProbes
+        if (required.isEmpty()) {
+            return ProfileProbeReadiness(true, emptySet(), emptySet(), "لا يتطلب Profile الحالي probes إضافية")
+        }
+        val report = probeReport
+            ?: return ProfileProbeReadiness(false, required, required, "يجب إكمال Capability Probe قبل السماح بالعمليات الحساسة")
+        val available = report.items
+            .filter { it.status == CapabilityProbeStatus.AVAILABLE }
+            .mapTo(mutableSetOf()) { it.id }
+        val missing = required - available
+        return if (missing.isEmpty()) {
+            ProfileProbeReadiness(true, required, emptySet(), "جميع probes المطلوبة لهذا Profile ناجحة")
+        } else {
+            ProfileProbeReadiness(false, required, missing, "Profile غير جاهز للكتابة؛ probes الناقصة: ${missing.joinToString(", ")}")
+        }
     }
 
 /**
@@ -105,6 +132,7 @@ object LiveFirmwareProfileCache {
                     firmware = normalizedFirmware.ifBlank { "غير معروف" },
                     bandLock = item.optString("bandLock").toActionSupport(),
                     nckEntry = item.optString("nck").toActionSupport(),
+                    requiredProbes = item.stringList("requiredProbes").toSet(),
                     notes = "قاعدة الأجهزة الحية v$version: $notes"
                 )
                 bestScore = score
@@ -135,6 +163,7 @@ object RouterFirmwareProfiles {
                 firmware = normalizedFirmware,
                 bandLock = ProfileActionSupport.VERIFIED,
                 nckEntry = ProfileActionSupport.READ_ONLY,
+                requiredProbes = setOf("zte_action_seed", "network_mode_read", "nr_band_state"),
                 notes = "قفل NR موثق لهذا Firmware. حالة Network Lock ومحاولات NCK تُقرأ فقط؛ إدخال NCK غير مفعّل دون endpoint رسمي موثق."
             )
         }
@@ -147,6 +176,7 @@ object RouterFirmwareProfiles {
                 firmware = normalizedFirmware.ifBlank { "غير معروف" },
                 bandLock = ProfileActionSupport.RUNTIME_PROBE,
                 nckEntry = ProfileActionSupport.READ_ONLY,
+                requiredProbes = setOf("zte_action_seed", "network_mode_read", "nr_band_state"),
                 notes = "يمكن اختبار قفل NR بفحص no-op للقيمة الحالية أولًا. إذا كان ترميز band mask غير واضح أو لم ينجح التحقق، يمنع التطبيق الكتابة."
             )
         }
@@ -159,6 +189,7 @@ object RouterFirmwareProfiles {
                 firmware = normalizedFirmware.ifBlank { "غير معروف" },
                 bandLock = ProfileActionSupport.READ_ONLY,
                 nckEntry = ProfileActionSupport.READ_ONLY,
+                requiredProbes = setOf("network_mode_read", "network_lock_read"),
                 notes = "قراءة الشبكة وSIM والقفل متاحة عندما يعرضها WebUI. Band Lock وNCK لا يكتبان بدون Profile موثق."
             )
         }
@@ -171,6 +202,7 @@ object RouterFirmwareProfiles {
                 firmware = normalizedFirmware.ifBlank { "غير معروف" },
                 bandLock = ProfileActionSupport.READ_ONLY,
                 nckEntry = ProfileActionSupport.READ_ONLY,
+                requiredProbes = setOf("huawei_session_token", "network_mode_read", "band_selection_read", "sim_security"),
                 notes = "HiLink/WebUI يُستخدم للقراءة والأوامر المثبتة فقط. Band Lock وNCK يبقيان قراءة فقط حتى توثيق ترميز الـAPI لهذا Firmware."
             )
         }
@@ -182,6 +214,7 @@ object RouterFirmwareProfiles {
             firmware = normalizedFirmware.ifBlank { "غير معروف" },
             bandLock = ProfileActionSupport.UNAVAILABLE,
             nckEntry = ProfileActionSupport.UNAVAILABLE,
+            requiredProbes = emptySet(),
             notes = "لم يطابق الجهاز Profile كتابة موثق؛ HAI MANAGER يبقي العمليات الحساسة معطلة."
         )
     }
@@ -197,6 +230,7 @@ private fun mergeConservatively(
     firmware = live.firmware,
     bandLock = stricterAction(baseline.bandLock, live.bandLock),
     nckEntry = stricterAction(baseline.nckEntry, live.nckEntry),
+    requiredProbes = baseline.requiredProbes + live.requiredProbes,
     notes = "${live.notes} لا تستطيع قاعدة البيانات البعيدة رفع صلاحية الكتابة فوق الحد الموجود في APK الموقع."
 )
 
