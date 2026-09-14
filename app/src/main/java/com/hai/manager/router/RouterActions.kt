@@ -34,8 +34,12 @@ class RouterActionService {
     }
 
     suspend fun setZteNrBands(inspection: RouterInspection, bands: List<Int>): RouterActionResult {
-        if (RouterCapability.BAND_LOCK !in inspection.capabilities) {
-            return RouterActionResult(false, "قفل النطاقات غير موثق لهذا Firmware")
+        if (inspection.snapshot.brand != RouterBrand.ZTE) {
+            return RouterActionResult(false, "قفل NR الحالي مخصص لملفات ZTE الموثقة")
+        }
+        val profile = inspection.firmwareProfileInfo
+        if (!profile.bandLock.canWrite) {
+            return RouterActionResult(false, "قفل النطاقات غير متاح للكتابة في Profile الحالي: ${profile.bandLock.displayName}")
         }
         if (bands.isEmpty() || bands.any { it !in 1..261 }) {
             return RouterActionResult(false, "أدخل نطاقات NR صحيحة")
@@ -45,28 +49,60 @@ class RouterActionService {
         val client = RouterHttpClient(baseUrl)
         val ad = zteAd(client) ?: return RouterActionResult(false, "تسجيل الدخول مطلوب أو لم يمكن إنشاء مفتاح الأمر")
         val requested = bands.distinct().sorted()
-        val response = client.postForm(
-            "/goform/goform_set_cmd_process",
-            mapOf(
-                "isTest" to "false",
-                "goformId" to "WAN_PERFORM_NR5G_BAND_LOCK",
-                "nr5g_band_mask" to requested.joinToString(","),
-                "AD" to ad
-            )
-        )
+
+        if (profile.bandLock == ProfileActionSupport.RUNTIME_PROBE) {
+            val currentRaw = readZteNrBandMask(client)
+                ?: return RouterActionResult(false, "هذا Firmware لا يعرض قيمة NR الحالية؛ لن يتم تنفيذ Band Lock تجريبي")
+            val currentBands = parseReadableNrBandList(currentRaw)
+                ?: return RouterActionResult(false, "ترميز NR band mask في هذا Firmware غير موثق ($currentRaw)، لذلك أبقيت الكتابة معطلة")
+            val probeResponse = sendZteNrBandLock(client, ad, currentBands)
+            if (!zteAccepted(probeResponse)) {
+                return RouterActionResult(false, "فشل فحص Band Lock الآمن؛ لم يتم إرسال النطاقات الجديدة")
+            }
+            delay(650)
+            val afterProbe = readZteNrBandMask(client)?.let(::parseReadableNrBandList)
+            if (afterProbe == null || afterProbe != currentBands) {
+                return RouterActionResult(false, "فشل التحقق من no-op preflight؛ تم إيقاف العملية قبل تغيير النطاقات")
+            }
+        }
+
+        val response = sendZteNrBandLock(client, ad, requested)
         val accepted = zteAccepted(response)
         if (!accepted) return RouterActionResult(false, "لم يقبل الراوتر قفل النطاقات")
 
         delay(700)
         val verified = readZteNrBandMask(client)?.let { actual ->
-            val actualBands = actual.split(',', '+', ' ', ';').mapNotNull { it.trim().toIntOrNull() }.distinct().sorted()
-            actualBands == requested
+            parseReadableNrBandList(actual)?.let { it == requested }
         }
         return when (verified) {
             true -> RouterActionResult(true, "تم تطبيق قفل نطاقات 5G والتحقق منه")
             false -> RouterActionResult(false, "قبل الراوتر الأمر لكن القيمة المقروءة بعد التنفيذ لا تطابق النطاقات المطلوبة")
-            null -> RouterActionResult(true, "قبل الراوتر قفل نطاقات 5G، لكن هذا Firmware لا يعرض قيمة القفل للتحقق المباشر")
+            null -> RouterActionResult(true, "قبل الراوتر قفل نطاقات 5G، لكن هذا Firmware لا يعرض قيمة قابلة للتحقق المباشر")
         }
+    }
+
+    private suspend fun sendZteNrBandLock(
+        client: RouterHttpClient,
+        ad: String,
+        bands: List<Int>
+    ): RouterHttpResponse = client.postForm(
+        "/goform/goform_set_cmd_process",
+        mapOf(
+            "isTest" to "false",
+            "goformId" to "WAN_PERFORM_NR5G_BAND_LOCK",
+            "nr5g_band_mask" to bands.distinct().sorted().joinToString(","),
+            "AD" to ad
+        )
+    )
+
+    private fun parseReadableNrBandList(raw: String): List<Int>? {
+        val normalized = raw.trim().removePrefix("[").removeSuffix("]")
+        if (!normalized.matches(Regex("[0-9]+(?:[,;+\\s]+[0-9]+)*"))) return null
+        val values = normalized.split(',', '+', ';', ' ')
+            .mapNotNull { it.trim().takeIf(String::isNotBlank)?.toIntOrNull() }
+            .distinct()
+            .sorted()
+        return values.takeIf { it.isNotEmpty() && it.all { band -> band in 1..261 } }
     }
 
     private suspend fun rebootZte(client: RouterHttpClient): RouterActionResult {

@@ -67,6 +67,7 @@ import com.hai.manager.router.RouterDiscoveryService
 import com.hai.manager.router.RouterInspection
 import com.hai.manager.router.RouterInspectorService
 import com.hai.manager.router.RouterSnapshot
+import com.hai.manager.router.firmwareProfileInfo
 import com.hai.manager.update.ApkUpdateInstaller
 import com.hai.manager.update.AppUpdate
 import com.hai.manager.update.UpdateCheckResult
@@ -232,6 +233,10 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
                             onClick = { context.startActivity(Intent(context, WifiToolsActivity::class.java).putExtra(WifiToolsActivity.EXTRA_URL, url)) },
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("إدارة Wi-Fi") }
+                        OutlinedButton(
+                            onClick = { context.startActivity(Intent(context, SimToolsActivity::class.java).putExtra(SimToolsActivity.EXTRA_URL, url)) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("إدارة SIM") }
                     }
                 }
             }
@@ -249,11 +254,23 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
             }
         }
 
+        inspection?.let { current ->
+            val profile = current.firmwareProfileInfo
+            SimpleCard("Firmware Profile") {
+                DetailRow("Profile", profile.profileId)
+                DetailRow("التحقق", profile.verification.displayName)
+                DetailRow("Band Lock", profile.bandLock.displayName)
+                DetailRow("Network Lock / NCK", profile.nckEntry.displayName)
+                Text(profile.notes, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+            }
+        }
+
         inspection?.security?.takeIf { it.hasData }?.let { security ->
             SimpleCard("SIM وقفل الشبكة") {
                 OptionalDetailRow("حالة SIM", security.simState)
                 OptionalDetailRow("حالة PIN", security.pinState)
                 OptionalDetailRow("محاولات PIN المتبقية", security.pinAttemptsRemaining)
+                OptionalDetailRow("محاولات PUK المتبقية", security.pukAttemptsRemaining)
                 OptionalDetailRow("قفل الشبكة", security.networkLockState)
                 OptionalDetailRow("محاولات فك الشبكة المتبقية", security.unlockAttemptsRemaining)
                 OptionalDetailRow("ICCID", security.iccid)
@@ -265,7 +282,9 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
 
         inspection?.let { current ->
             val caps = current.capabilities
-            if (RouterCapability.NETWORK_MODE in caps || RouterCapability.REBOOT in caps || RouterCapability.BAND_LOCK in caps) {
+            val profile = current.firmwareProfileInfo
+            val bandWritable = current.snapshot.brand == RouterBrand.ZTE && profile.bandLock.canWrite
+            if (RouterCapability.NETWORK_MODE in caps || RouterCapability.REBOOT in caps || bandWritable) {
                 SimpleCard("أدوات الراوتر") {
                     if (RouterCapability.NETWORK_MODE in caps && current.supportedNetworkModes.isNotEmpty()) {
                         Text("أوضاع الشبكة", style = MaterialTheme.typography.titleSmall)
@@ -277,8 +296,9 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
                             ) { Text(mode.displayName) }
                         }
                     }
-                    if (RouterCapability.BAND_LOCK in caps) {
+                    if (bandWritable) {
                         Text("قفل نطاقات 5G", style = MaterialTheme.typography.titleSmall)
+                        Text("حالة الدعم: ${profile.bandLock.displayName}")
                         OutlinedTextField(
                             value = nrBands,
                             onValueChange = { nrBands = it },
@@ -293,6 +313,9 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
                             enabled = !actionBusy,
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("تطبيق قفل 5G") }
+                        if (profile.bandLock.displayName.contains("فحص")) {
+                            Text("سيجري التطبيق preflight بإعادة القيمة الحالية أولًا. إذا لم يمكن التحقق منها فلن يرسل القيمة الجديدة.")
+                        }
                     }
                     if (RouterCapability.REBOOT in caps) {
                         Button(onClick = { confirmReboot = true }, enabled = !actionBusy, modifier = Modifier.fillMaxWidth()) {
@@ -306,7 +329,7 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
         }
 
         SimpleCard("التوافق") {
-            Text("المرحلة الحالية مخصصة لـ Huawei وZTE. لا يظهر أي أمر تغييري إلا بعد إثبات الـAPI والـFirmware، ثم يعاد فحص القيمة بعد التنفيذ متى أمكن.")
+            Text("HAI MANAGER يطابق Model + Firmware قبل العمليات الحساسة. NCK غير الموثق يبقى قراءة فقط، وBand Lock التجريبي لا يبدأ إلا بعد preflight يحافظ على القيمة الحالية ويتحقق منها.")
         }
     }
 }
@@ -388,13 +411,13 @@ private fun DevicesScreen(context: Context, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         AppHeader()
         Text("قاعدة الأجهزة", style = MaterialTheme.typography.titleLarge)
-        Text("الأولوية الحالية: تعميق دعم Huawei وZTE قبل إضافة أي شركة أخرى.")
+        Text("الأولوية الحالية: Firmware profiles دقيقة لـ Huawei وZTE قبل إضافة أي شركة أخرى.")
         CatalogCard(status, syncing, ::sync)
         SimpleCard("ZTE") {
-            Text("MC801A / MC888 / MC889 / MC7010 وعائلات MF286/MF289/MF297: اكتشاف وقراءة شبكة وFirmware وSIM، مع أوامر تدريجية حسب الـFirmware.")
+            Text("MC801A / MC888 / MC889 / MC7010 وعائلات MF286/MF289/MF297: Profile مطابق للـFirmware، تشخيص SIM/Network Lock، وBand Lock موثق أو Runtime-preflight حسب الحالة.")
         }
         SimpleCard("Huawei") {
-            Text("H155/H158/H122/H112 وعائلات B818/B715/B628/B535/B525: HiLink/WebUI، قراءة الشبكة وSIM وFirmware، وأوامر موثقة عند توفر API.")
+            Text("H155/H158/H138/H122/H112 وعائلات B818/B715/B628/B535/B525: HiLink/WebUI مع Profile لكل Firmware. Band/NCK يبقيان قراءة فقط حتى توثيق ترميز الكتابة.")
         }
     }
 }

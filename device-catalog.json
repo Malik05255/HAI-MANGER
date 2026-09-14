@@ -1,54 +1,69 @@
 {
-  "catalogVersion": 7,
+  "catalogVersion": 8,
   "updatedAt": "2026-09-15",
   "focus": ["ZTE", "Huawei"],
   "devices": [
-    {"brand":"ZTE","model":"MC888 Ultra","aliases":["MC888 Ultra"],"discovery":true,"generation":"5G","firmware":"official_only","simPin":"runtime_verified","networkUnlock":"diagnostics_only"},
-    {"brand":"ZTE","model":"MC888 Pro","aliases":["MC888 Pro"],"discovery":true,"generation":"5G","firmware":"official_only","simPin":"runtime_verified","networkUnlock":"diagnostics_only"},
-    {"brand":"ZTE","model":"MC888","aliases":["MC888","MC888D"],"discovery":true,"generation":"5G","firmware":"official_only","simPin":"runtime_verified","networkUnlock":"diagnostics_only"},
-    {"brand":"ZTE","model":"MC801A","aliases":["MC801A"],"discovery":true,"generation":"5G","firmware":"official_only","simPin":"runtime_verified","networkUnlock":"diagnostics_only"},
-    {"brand":"ZTE","model":"MC889","aliases":["MC889","MC889A"],"discovery":true,"generation":"5G","firmware":"official_only","simPin":"runtime_verified","networkUnlock":"diagnostics_only"},
-    {"brand":"ZTE","model":"MC7010","aliases":["MC7010","MC7010CA"],"discovery":true,"generation":"5G","firmware":"official_only","simPin":"runtime_verified","networkUnlock":"diagnostics_only"},
-    {"brand":"ZTE","model":"MF297D","aliases":["MF297D"],"discovery":true,"generation":"4G","firmware":"official_only","simPin":"runtime_verified","networkUnlock":"diagnostics_only"},
-    {"brand":"ZTE","model":"MF289F","aliases":["MF289F"],"discovery":true,"generation":"4G","firmware":"official_only","simPin":"runtime_verified","networkUnlock":"diagnostics_only"},
-    {"brand":"ZTE","model":"MF286","aliases":["MF286","MF286D","MF286R"],"discovery":true,"generation":"4G","firmware":"official_only","simPin":"runtime_verified","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"H158-381","aliases":["H158-381"],"discovery":true,"generation":"5G","firmware":"official_only","simPin":"hilink_api","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"H155-381","aliases":["H155-381"],"discovery":true,"generation":"5G","firmware":"official_only","simPin":"hilink_api","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"H138-380","aliases":["H138-380"],"discovery":true,"generation":"5G","firmware":"official_only","simPin":"hilink_api","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"H122-373","aliases":["H122-373"],"discovery":true,"generation":"5G","firmware":"official_only","simPin":"hilink_api","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"H112-370","aliases":["H112-370"],"discovery":true,"generation":"5G","firmware":"official_only","simPin":"hilink_api","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"B818","aliases":["B818"],"discovery":true,"generation":"4G","firmware":"official_only","simPin":"hilink_api","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"B715","aliases":["B715"],"discovery":true,"generation":"4G","firmware":"official_only","simPin":"hilink_api","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"B628","aliases":["B628"],"discovery":true,"generation":"4G","firmware":"official_only","simPin":"hilink_api","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"B535","aliases":["B535"],"discovery":true,"generation":"4G","firmware":"official_only","simPin":"hilink_api","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"B525","aliases":["B525"],"discovery":true,"generation":"4G","firmware":"official_only","simPin":"hilink_api","networkUnlock":"diagnostics_only"}
+    {"brand":"ZTE","model":"MC888 Ultra","aliases":["MC888 Ultra"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC888 Pro","aliases":["MC888 Pro"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC888","aliases":["MC888","MC888D"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC801A","aliases":["MC801A"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC889","aliases":["MC889","MC889A"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC7010","aliases":["MC7010","MC7010CA"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MF297D","aliases":["MF297D"],"generation":"4G","profile":"ZTE-4G-GOFORM-READ","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MF289F","aliases":["MF289F"],"generation":"4G","profile":"ZTE-4G-GOFORM-READ","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MF286","aliases":["MF286","MF286D","MF286R"],"generation":"4G","profile":"ZTE-4G-GOFORM-READ","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H158-381","aliases":["H158-381"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H155-381","aliases":["H155-381"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H138-380","aliases":["H138-380"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H122-373","aliases":["H122-373"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H112-370","aliases":["H112-370"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B818","aliases":["B818"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B715","aliases":["B715"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B628","aliases":["B628"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B535","aliases":["B535"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B525","aliases":["B525"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"}
   ],
-  "verifiedProfiles": [
+  "firmwareProfiles": [
     {
-      "brand":"ZTE",
-      "family":"MC/MF WebUI goform",
-      "verification":"runtime_api_probe",
-      "read":["device_info","signal","ca","bands","sim_state","pin_attempts_when_exposed","puk_attempts_when_exposed","network_lock_state","unlock_attempts_when_exposed"],
-      "actions":["sim_pin_when_requested","sim_puk_when_requested","reboot","network_mode"],
-      "postVerify":["sim_state","network_mode"],
-      "notes":"PIN/PUK لا يرسلان إلا إذا أعلن WebUI أن الرمز مطلوب. Network Unlock/NCK يبقى قراءة فقط حتى توثيق endpoint لكل Firmware."
-    },
-    {
+      "id":"ZTE-MC801A-B15",
       "brand":"ZTE",
       "model":"MC801A",
-      "firmware":"BD_UKH3GMC801AV1.0.0B15",
-      "actions":["sim_pin_when_requested","sim_puk_when_requested","reboot","network_mode","nr5g_band_lock"],
-      "postVerify":["sim_state","network_mode","nr5g_band_lock_when_readable"],
-      "notes":"قفل 5G موثق لهذا Firmware فقط في المرحلة الحالية."
+      "firmwareContains":"BD_UKH3GMC801AV1.0.0B15",
+      "verification":"verified",
+      "bandLock":"verified_write",
+      "nck":"read_only",
+      "notes":"NR5G band lock is enabled only for this exact verified profile without runtime downgrade."
     },
     {
+      "id":"ZTE-5G-GOFORM-RUNTIME",
+      "brand":"ZTE",
+      "families":["MC801","MC888","MC889","MC7010"],
+      "verification":"runtime_probed",
+      "bandLock":"runtime_preflight",
+      "preflight":"write current readable band list unchanged, read it back, abort if mismatch",
+      "nck":"read_only",
+      "notes":"If band-mask encoding is hex/opaque or the no-op verification fails, HAI MANAGER blocks the write."
+    },
+    {
+      "id":"ZTE-4G-GOFORM-READ",
+      "brand":"ZTE",
+      "families":["MF286","MF289","MF297"],
+      "verification":"runtime_probed",
+      "bandLock":"read_only",
+      "nck":"read_only"
+    },
+    {
+      "id":"HUAWEI-HILINK-RUNTIME",
       "brand":"Huawei",
-      "family":"HiLink/WebUI",
-      "verification":"runtime_api_probe",
-      "read":["device_info","signal","plmn","firmware","sim_pin_state","sim_pin_attempts","sim_puk_attempts","simlock_state_when_exposed"],
-      "actions":["sim_pin_when_requested","sim_puk_when_requested","reboot","network_mode_auto","network_mode_lte_only","wifi_rename_when_available"],
-      "postVerify":["sim_state","network_mode","wifi_rename_when_connection_survives"],
-      "notes":"إدارة PIN/PUK تستخدم HiLink /api/pin/operate بعد التحقق من الحالة. Network Unlock/NCK لا يرسل حتى توثيق API الخاص بالـFirmware."
+      "families":["H158","H155","H138","H122","H112","B818","B715","B628","B535","B525"],
+      "verification":"runtime_probed",
+      "bandLock":"read_only",
+      "nck":"read_only",
+      "notes":"HiLink network-mode APIs remain enabled only for already verified operations. Band/NCK writes require an exact firmware profile before activation."
     }
-  ]
+  ],
+  "policy": {
+    "networkUnlock": "Only manufacturer/carrier-supported or otherwise explicitly verified NCK entry flows may be enabled. Undocumented bypass/exploit paths are not shipped.",
+    "bandLock": "Exact profiles may write directly. Runtime profiles require a no-op preflight and post-read verification."
+  }
 }

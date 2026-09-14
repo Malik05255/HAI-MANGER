@@ -119,7 +119,7 @@ jobs:
             "versionCode": $VERSION_CODE,
             "versionName": "$VERSION_NAME",
             "apkUrl": "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/HAI-MANAGER.apk",
-            "notes": "Huawei وZTE: إضافة إدارة SIM الآمنة، إدخال PIN/PUK عند طلب الراوتر فقط، قراءة محاولات PIN/PUK وقفل الشبكة، والتحقق من حالة SIM بعد التنفيذ.",
+            "notes": "Huawei وZTE: Firmware Profile Engine، توسيع Band Lock لـ ZTE 5G عبر preflight آمن، وإظهار حالة NCK كموثق/قراءة فقط حسب Model + Firmware.",
             "mandatory": false,
             "signatureStable": true,
             "signingCertSha256": "$EXPECTED_SIGNING_CERT_SHA256",
