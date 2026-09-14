@@ -9,6 +9,7 @@ class RouterActionService {
         if (RouterCapability.REBOOT !in inspection.capabilities) {
             return RouterActionResult(false, "إعادة التشغيل غير موثقة لهذا الجهاز أو Firmware")
         }
+        RouterWriteSafety.validate(inspection, RouterWriteOperation.REBOOT)?.let { return it }
         val baseUrl = inspection.snapshot.managementUrl
             ?: return RouterActionResult(false, "عنوان إدارة الراوتر غير متوفر")
         val client = RouterHttpClient(baseUrl)
@@ -23,6 +24,7 @@ class RouterActionService {
         if (RouterCapability.NETWORK_MODE !in inspection.capabilities || mode !in inspection.supportedNetworkModes) {
             return RouterActionResult(false, "وضع الشبكة هذا غير موثق لهذا الراوتر")
         }
+        RouterWriteSafety.validate(inspection, RouterWriteOperation.NETWORK_MODE)?.let { return it }
         val baseUrl = inspection.snapshot.managementUrl
             ?: return RouterActionResult(false, "عنوان إدارة الراوتر غير متوفر")
         val client = RouterHttpClient(baseUrl)
@@ -41,6 +43,11 @@ class RouterActionService {
         if (!profile.bandLock.canWrite) {
             return RouterActionResult(false, "قفل النطاقات غير متاح للكتابة في Profile الحالي: ${profile.bandLock.displayName}")
         }
+        val readiness = inspection.profileProbeReadiness
+        if (!readiness.ready) {
+            return RouterActionResult(false, readiness.message)
+        }
+        RouterWriteSafety.validate(inspection, RouterWriteOperation.BAND_LOCK)?.let { return it }
         if (bands.isEmpty() || bands.any { it !in 1..261 }) {
             return RouterActionResult(false, "أدخل نطاقات NR صحيحة")
         }
