@@ -1,0 +1,126 @@
+{
+  "catalogVersion": 12,
+  "updatedAt": "2026-09-15",
+  "focus": ["ZTE", "Huawei"],
+  "diagnosticsVersion": 2,
+  "writeSafetyVersion": 1,
+  "devices": [
+    {"brand":"ZTE","model":"MC888 Ultra","aliases":["MC888 Ultra"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC888 Pro","aliases":["MC888 Pro"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC888","aliases":["MC888","MC888D"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC801A","aliases":["MC801A"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC889","aliases":["MC889","MC889A"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC7010","aliases":["MC7010","MC7010CA"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MF297D","aliases":["MF297D"],"generation":"4G","profile":"ZTE-4G-GOFORM-READ","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MF289F","aliases":["MF289F"],"generation":"4G","profile":"ZTE-4G-GOFORM-READ","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MF286","aliases":["MF286","MF286D","MF286R"],"generation":"4G","profile":"ZTE-4G-GOFORM-READ","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H158-381","aliases":["H158-381"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H155-381","aliases":["H155-381"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H138-380","aliases":["H138-380"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H122-373","aliases":["H122-373"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H112-370","aliases":["H112-370"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B818","aliases":["B818"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B715","aliases":["B715"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B628","aliases":["B628"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B535","aliases":["B535"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B525","aliases":["B525"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"}
+  ],
+  "firmwareProfiles": [
+    {
+      "id":"ZTE-MC801A-B15",
+      "brand":"ZTE",
+      "model":"MC801A",
+      "firmwareContains":"BD_UKH3GMC801AV1.0.0B15",
+      "verification":"verified",
+      "bandLock":"verified_write",
+      "nck":"read_only",
+      "requiredProbes":["zte_action_seed","network_mode_read","nr_band_state"],
+      "actionProbes":{
+        "reboot":["zte_action_seed"],
+        "networkMode":["zte_action_seed","network_mode_read"],
+        "bandLock":["zte_action_seed","network_mode_read","nr_band_state"]
+      },
+      "notes":"قفل NR موثق لهذا الـFirmware بشرط نجاح probes المطلوبة. إدخال NCK يبقى قراءة فقط حتى وجود endpoint رسمي موثق."
+    },
+    {
+      "id":"ZTE-5G-GOFORM-RUNTIME",
+      "brand":"ZTE",
+      "families":["MC801","MC888","MC889","MC7010"],
+      "verification":"runtime_probed",
+      "bandLock":"runtime_preflight",
+      "preflight":"write current readable band list unchanged, read it back, abort if mismatch",
+      "nck":"read_only",
+      "requiredProbes":["zte_action_seed","network_mode_read","nr_band_state"],
+      "actionProbes":{
+        "reboot":["zte_action_seed"],
+        "networkMode":["zte_action_seed","network_mode_read"],
+        "bandLock":["zte_action_seed","network_mode_read","nr_band_state"]
+      },
+      "notes":"إذا كان band mask مشفرًا أو فشل probe أو no-op preflight، يمنع HAI MANAGER الكتابة."
+    },
+    {
+      "id":"ZTE-4G-GOFORM-READ",
+      "brand":"ZTE",
+      "families":["MF286","MF289","MF297"],
+      "verification":"runtime_probed",
+      "bandLock":"read_only",
+      "nck":"read_only",
+      "requiredProbes":["network_mode_read","network_lock_read"],
+      "actionProbes":{
+        "reboot":["zte_action_seed"],
+        "networkMode":["zte_action_seed","network_mode_read"]
+      },
+      "notes":"تشخيص وقراءة فقط للعمليات الحساسة حتى توثيق Firmware محدد."
+    },
+    {
+      "id":"HUAWEI-HILINK-RUNTIME",
+      "brand":"Huawei",
+      "families":["H158","H155","H138","H122","H112","B818","B715","B628","B535","B525"],
+      "verification":"runtime_probed",
+      "bandLock":"read_only",
+      "nck":"read_only",
+      "requiredProbes":["huawei_session_token","network_mode_read","band_selection_read","sim_security"],
+      "actionProbes":{
+        "reboot":["huawei_session_token"],
+        "networkMode":["huawei_session_token","network_mode_read","band_selection_read"]
+      },
+      "notes":"تستخدم واجهات HiLink للأوامر المثبتة فقط. Band Lock وNCK يحتاجان Profile Firmware موثق قبل تفعيل الكتابة."
+    }
+  ],
+  "firmwareUpdates": [],
+  "firmwareUpdatePolicy": {
+    "companyCatalog":"Only verified Huawei/ZTE carrier or vendor packages may be listed.",
+    "requiredFields":["brand","modelContains","version","company","installMode","verified"],
+    "directPackageRequires":["https_url","sha256","hardware_match","current_firmware_match","signed_install_adapter"],
+    "remoteCatalogCanForceInstall": false,
+    "compatibilityGate":"brand + model + hardware + current firmware + install adapter + integrity verification"
+  },
+  "probeMatrix": {
+    "ZTE": ["zte_action_seed","network_mode_read","nr_band_state","network_lock_read","wifi_read","nck_write"],
+    "Huawei": ["huawei_session_token","network_mode_read","band_selection_read","mode_list","sim_security","wifi_read","network_lock_read","nck_write"]
+  },
+  "writeGates": {
+    "ZTE": {
+      "reboot": ["zte_action_seed"],
+      "networkMode": ["zte_action_seed","network_mode_read"],
+      "bandLock": ["zte_action_seed","network_mode_read","nr_band_state"],
+      "nck": ["network_lock_read","nck_write"]
+    },
+    "Huawei": {
+      "reboot": ["huawei_session_token"],
+      "networkMode": ["huawei_session_token","network_mode_read","band_selection_read"],
+      "bandLock": ["huawei_session_token","network_mode_read","band_selection_read"],
+      "nck": ["network_lock_read","nck_write"]
+    }
+  },
+  "policy": {
+    "focus":"Huawei_ZTE_only",
+    "remoteProfilesCanEscalateWrites": false,
+    "remoteProfilesCanRestrictWrites": true,
+    "networkUnlock": "Only manufacturer/carrier-supported or otherwise explicitly verified NCK entry flows may be enabled. Undocumented bypass/exploit paths are not shipped.",
+    "bandLock": "Exact profiles may write directly only after their required probes pass. Runtime profiles additionally require a no-op preflight and post-read verification.",
+    "safety":"Live catalog updates may tighten or disable write operations immediately, but cannot grant broader write access than the signed APK baseline.",
+    "probePolicy":"Capability probes are read-only. Every sensitive write is independently gated by required successful probes before the command is sent.",
+    "writeGate":"signed APK capability + firmware profile + successful required probes + command-level post verification"
+  }
+}
