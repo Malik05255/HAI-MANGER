@@ -25,6 +25,7 @@ data class FirmwareProfileInfo(
     val bandLock: ProfileActionSupport,
     val nckEntry: ProfileActionSupport,
     val requiredProbes: Set<String> = emptySet(),
+    val actionProbes: Map<RouterWriteOperation, Set<String>> = emptyMap(),
     val notes: String
 )
 
@@ -135,6 +136,7 @@ object LiveFirmwareProfileCache {
                     bandLock = item.optString("bandLock").toActionSupport(),
                     nckEntry = item.optString("nck").toActionSupport(),
                     requiredProbes = item.stringList("requiredProbes").toSet(),
+                    actionProbes = item.actionProbeMap(),
                     notes = "قاعدة الأجهزة الحية v$version: $notes"
                 )
                 bestScore = score
@@ -166,6 +168,7 @@ object RouterFirmwareProfiles {
                 bandLock = ProfileActionSupport.VERIFIED,
                 nckEntry = ProfileActionSupport.READ_ONLY,
                 requiredProbes = setOf("zte_action_seed", "network_mode_read", "nr_band_state"),
+                actionProbes = zte5gActionProbes(),
                 notes = "قفل NR موثق لهذا Firmware. حالة Network Lock ومحاولات NCK تُقرأ فقط؛ إدخال NCK غير مفعّل دون endpoint رسمي موثق."
             )
         }
@@ -179,6 +182,7 @@ object RouterFirmwareProfiles {
                 bandLock = ProfileActionSupport.RUNTIME_PROBE,
                 nckEntry = ProfileActionSupport.READ_ONLY,
                 requiredProbes = setOf("zte_action_seed", "network_mode_read", "nr_band_state"),
+                actionProbes = zte5gActionProbes(),
                 notes = "يمكن اختبار قفل NR بفحص no-op للقيمة الحالية أولًا. إذا كان ترميز band mask غير واضح أو لم ينجح التحقق، يمنع التطبيق الكتابة."
             )
         }
@@ -192,6 +196,10 @@ object RouterFirmwareProfiles {
                 bandLock = ProfileActionSupport.READ_ONLY,
                 nckEntry = ProfileActionSupport.READ_ONLY,
                 requiredProbes = setOf("network_mode_read", "network_lock_read"),
+                actionProbes = mapOf(
+                    RouterWriteOperation.REBOOT to setOf("zte_action_seed"),
+                    RouterWriteOperation.NETWORK_MODE to setOf("zte_action_seed", "network_mode_read")
+                ),
                 notes = "قراءة الشبكة وSIM والقفل متاحة عندما يعرضها WebUI. Band Lock وNCK لا يكتبان بدون Profile موثق."
             )
         }
@@ -205,6 +213,10 @@ object RouterFirmwareProfiles {
                 bandLock = ProfileActionSupport.READ_ONLY,
                 nckEntry = ProfileActionSupport.READ_ONLY,
                 requiredProbes = setOf("huawei_session_token", "network_mode_read", "band_selection_read", "sim_security"),
+                actionProbes = mapOf(
+                    RouterWriteOperation.REBOOT to setOf("huawei_session_token"),
+                    RouterWriteOperation.NETWORK_MODE to setOf("huawei_session_token", "network_mode_read", "band_selection_read")
+                ),
                 notes = "HiLink/WebUI يُستخدم للقراءة والأوامر المثبتة فقط. Band Lock وNCK يبقيان قراءة فقط حتى توثيق ترميز الـAPI لهذا Firmware."
             )
         }
@@ -217,21 +229,30 @@ object RouterFirmwareProfiles {
             bandLock = ProfileActionSupport.UNAVAILABLE,
             nckEntry = ProfileActionSupport.UNAVAILABLE,
             requiredProbes = emptySet(),
+            actionProbes = emptyMap(),
             notes = "لم يطابق الجهاز Profile كتابة موثق؛ HAI MANAGER يبقي العمليات الحساسة معطلة."
         )
     }
 }
 
+private fun zte5gActionProbes(): Map<RouterWriteOperation, Set<String>> = mapOf(
+    RouterWriteOperation.REBOOT to setOf("zte_action_seed"),
+    RouterWriteOperation.NETWORK_MODE to setOf("zte_action_seed", "network_mode_read"),
+    RouterWriteOperation.BAND_LOCK to setOf("zte_action_seed", "network_mode_read", "nr_band_state")
+)
+
 private fun applyProbeRestrictions(
     profile: FirmwareProfileInfo,
     report: RouterCapabilityReport?
 ): FirmwareProfileInfo {
-    if (!profile.bandLock.canWrite || profile.requiredProbes.isEmpty()) return profile
+    if (!profile.bandLock.canWrite) return profile
+    val required = profile.actionProbes[RouterWriteOperation.BAND_LOCK].orEmpty().ifEmpty { profile.requiredProbes }
+    if (required.isEmpty()) return profile
     val available = report?.items
         ?.filter { it.status == CapabilityProbeStatus.AVAILABLE }
         ?.mapTo(mutableSetOf()) { it.id }
         .orEmpty()
-    val missing = profile.requiredProbes - available
+    val missing = required - available
     if (missing.isEmpty()) return profile
     return profile.copy(
         bandLock = ProfileActionSupport.READ_ONLY,
@@ -250,8 +271,34 @@ private fun mergeConservatively(
     bandLock = stricterAction(baseline.bandLock, live.bandLock),
     nckEntry = stricterAction(baseline.nckEntry, live.nckEntry),
     requiredProbes = baseline.requiredProbes + live.requiredProbes,
+    actionProbes = mergeActionProbes(baseline.actionProbes, live.actionProbes),
     notes = "${live.notes} لا تستطيع قاعدة البيانات البعيدة رفع صلاحية الكتابة فوق الحد الموجود في APK الموقع."
 )
+
+private fun mergeActionProbes(
+    baseline: Map<RouterWriteOperation, Set<String>>,
+    live: Map<RouterWriteOperation, Set<String>>
+): Map<RouterWriteOperation, Set<String>> = buildMap {
+    RouterWriteOperation.entries.forEach { operation ->
+        val merged = baseline[operation].orEmpty() + live[operation].orEmpty()
+        if (merged.isNotEmpty()) put(operation, merged)
+    }
+}
+
+private fun JSONObject.actionProbeMap(): Map<RouterWriteOperation, Set<String>> {
+    val source = optJSONObject("actionProbes") ?: return emptyMap()
+    return buildMap {
+        listOf(
+            RouterWriteOperation.REBOOT to "reboot",
+            RouterWriteOperation.NETWORK_MODE to "networkMode",
+            RouterWriteOperation.BAND_LOCK to "bandLock",
+            RouterWriteOperation.NCK_ENTRY to "nck"
+        ).forEach { (operation, key) ->
+            val values = source.stringList(key).toSet()
+            if (values.isNotEmpty()) put(operation, values)
+        }
+    }
+}
 
 private fun stricterVerification(a: FirmwareVerification, b: FirmwareVerification): FirmwareVerification {
     fun rank(value: FirmwareVerification): Int = when (value) {
