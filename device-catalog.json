@@ -1,7 +1,8 @@
 {
-  "catalogVersion": 9,
+  "catalogVersion": 10,
   "updatedAt": "2026-09-15",
   "focus": ["ZTE", "Huawei"],
+  "diagnosticsVersion": 1,
   "devices": [
     {"brand":"ZTE","model":"MC888 Ultra","aliases":["MC888 Ultra"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
     {"brand":"ZTE","model":"MC888 Pro","aliases":["MC888 Pro"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
@@ -32,6 +33,7 @@
       "verification":"verified",
       "bandLock":"verified_write",
       "nck":"read_only",
+      "requiredProbes":["zte_action_seed","network_mode_read","nr_band_state"],
       "notes":"قفل NR موثق لهذا الـFirmware. إدخال NCK يبقى قراءة فقط حتى وجود endpoint رسمي موثق."
     },
     {
@@ -42,6 +44,7 @@
       "bandLock":"runtime_preflight",
       "preflight":"write current readable band list unchanged, read it back, abort if mismatch",
       "nck":"read_only",
+      "requiredProbes":["zte_action_seed","network_mode_read","nr_band_state"],
       "notes":"إذا كان band mask مشفرًا أو فشل no-op preflight، يمنع HAI MANAGER الكتابة."
     },
     {
@@ -51,6 +54,7 @@
       "verification":"runtime_probed",
       "bandLock":"read_only",
       "nck":"read_only",
+      "requiredProbes":["network_mode_read","network_lock_read"],
       "notes":"تشخيص وقراءة فقط للعمليات الحساسة حتى توثيق Firmware محدد."
     },
     {
@@ -60,15 +64,21 @@
       "verification":"runtime_probed",
       "bandLock":"read_only",
       "nck":"read_only",
+      "requiredProbes":["huawei_session_token","network_mode_read","band_selection_read","sim_security"],
       "notes":"تستخدم واجهات HiLink للأوامر المثبتة فقط. Band Lock وNCK يحتاجان Profile Firmware موثق قبل تفعيل الكتابة."
     }
   ],
+  "probeMatrix": {
+    "ZTE": ["zte_action_seed","network_mode_read","nr_band_state","network_lock_read","wifi_read","nck_write"],
+    "Huawei": ["huawei_session_token","network_mode_read","band_selection_read","mode_list","sim_security","wifi_read","network_lock_read","nck_write"]
+  },
   "policy": {
     "focus":"Huawei_ZTE_only",
     "remoteProfilesCanEscalateWrites": false,
     "remoteProfilesCanRestrictWrites": true,
     "networkUnlock": "Only manufacturer/carrier-supported or otherwise explicitly verified NCK entry flows may be enabled. Undocumented bypass/exploit paths are not shipped.",
     "bandLock": "Exact profiles may write directly. Runtime profiles require a no-op preflight and post-read verification.",
-    "safety":"Live catalog updates may tighten or disable write operations immediately, but cannot grant broader write access than the signed APK baseline."
+    "safety":"Live catalog updates may tighten or disable write operations immediately, but cannot grant broader write access than the signed APK baseline.",
+    "probePolicy":"Capability probes are read-only. A successful probe may improve diagnostics, but cannot by itself authorize an NCK or Band Lock write beyond the signed APK policy."
   }
 }
