@@ -1,6 +1,7 @@
 package com.hai.manager
 
 import android.annotation.SuppressLint
+import android.graphics.Bitmap
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -24,8 +25,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -33,17 +35,45 @@ fun InAppRouterPanel(
     url: String,
     onClose: () -> Unit
 ) {
+    val context = LocalContext.current
     var loading by remember { mutableStateOf(true) }
-    var currentUrl by remember { mutableStateOf(url) }
-    val webView = remember(url) {
-        WebViewHolder.webViewFactory(url) { pageUrl, isLoading ->
-            currentUrl = pageUrl
-            loading = isLoading
+    var currentUrl by remember(url) { mutableStateOf(url) }
+    var canGoBack by remember { mutableStateOf(false) }
+
+    val webView = remember(context, url) {
+        WebView(context).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
+            settings.javaScriptCanOpenWindowsAutomatically = false
+            settings.setSupportMultipleWindows(false)
+            webChromeClient = WebChromeClient()
+            webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView?, pageUrl: String?, favicon: Bitmap?) {
+                    loading = true
+                    currentUrl = pageUrl.orEmpty()
+                    canGoBack = view?.canGoBack() == true
+                }
+
+                override fun onPageFinished(view: WebView?, pageUrl: String?) {
+                    CookieManager.getInstance().flush()
+                    loading = false
+                    currentUrl = pageUrl.orEmpty()
+                    canGoBack = view?.canGoBack() == true
+                }
+            }
+            CookieManager.getInstance().setAcceptCookie(true)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+            loadUrl(url)
         }
     }
 
     BackHandler {
-        if (webView.canGoBack()) webView.goBack() else {
+        if (webView.canGoBack()) {
+            webView.goBack()
+            canGoBack = webView.canGoBack()
+        } else {
             CookieManager.getInstance().flush()
             onClose()
         }
@@ -70,8 +100,13 @@ fun InAppRouterPanel(
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
-                onClick = { if (webView.canGoBack()) webView.goBack() },
-                enabled = webView.canGoBack(),
+                onClick = {
+                    if (webView.canGoBack()) {
+                        webView.goBack()
+                        canGoBack = webView.canGoBack()
+                    }
+                },
+                enabled = canGoBack,
                 modifier = Modifier.weight(1f)
             ) { Text("رجوع") }
             OutlinedButton(
@@ -95,48 +130,4 @@ fun InAppRouterPanel(
             }
         )
     }
-}
-
-private object WebViewHolder {
-    @SuppressLint("SetJavaScriptEnabled")
-    fun webViewFactory(
-        url: String,
-        onState: (String, Boolean) -> Unit
-    ): WebView = WebView(AppContextHolder.requireContext()).apply {
-        settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
-        settings.allowFileAccess = false
-        settings.allowContentAccess = false
-        settings.javaScriptCanOpenWindowsAutomatically = false
-        settings.setSupportMultipleWindows(false)
-        webChromeClient = WebChromeClient()
-        webViewClient = object : WebViewClient() {
-            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                onState(url.orEmpty(), true)
-            }
-
-            override fun onPageFinished(view: WebView?, url: String?) {
-                CookieManager.getInstance().flush()
-                onState(url.orEmpty(), false)
-            }
-        }
-        CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-        loadUrl(url)
-    }
-}
-
-/**
- * يوفر Context التطبيق للـWebView من دون الاحتفاظ بـActivity.
- */
-object AppContextHolder {
-    @Volatile
-    private var context: android.content.Context? = null
-
-    fun init(context: android.content.Context) {
-        this.context = context.applicationContext
-    }
-
-    fun requireContext(): android.content.Context =
-        checkNotNull(context) { "AppContextHolder is not initialized" }
 }
