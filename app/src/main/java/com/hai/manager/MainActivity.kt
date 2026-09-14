@@ -11,22 +11,23 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Router
+import androidx.compose.material.icons.outlined.SimCard
 import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -36,10 +37,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -50,27 +49,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.hai.manager.catalog.CatalogStatus
-import com.hai.manager.catalog.DeviceCatalogRepository
-import com.hai.manager.router.CellularSignal
+import com.hai.manager.router.NetworkMode
 import com.hai.manager.router.RouterAccessStatus
 import com.hai.manager.router.RouterActionResult
 import com.hai.manager.router.RouterActionService
 import com.hai.manager.router.RouterBrand
 import com.hai.manager.router.RouterCapability
 import com.hai.manager.router.RouterCapabilityProbeService
-import com.hai.manager.router.RouterDiagnosticsReport
 import com.hai.manager.router.RouterDiscoveryService
 import com.hai.manager.router.RouterInspection
 import com.hai.manager.router.RouterInspectorService
 import com.hai.manager.router.RouterSnapshot
 import com.hai.manager.router.firmwareProfileInfo
-import com.hai.manager.router.profileProbeReadiness
 import com.hai.manager.update.ApkUpdateInstaller
 import com.hai.manager.update.AppUpdate
 import com.hai.manager.update.UpdateCheckResult
@@ -98,70 +91,27 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class AppTab(val title: String) { HOME("الرئيسية"), DEVICES("الأجهزة"), UPDATES("التحديثات") }
+private enum class AppTab(val title: String) {
+    HOME("الرئيسية"), ROUTER("الراوتر"), UPDATES("التحديثات")
+}
 
 @Composable
 fun HaiManagerApp() {
     val context = LocalContext.current
-    var tab by remember { mutableStateOf(AppTab.HOME) }
-    val colors = lightColorScheme(
-        primary = Color(0xFF1F2933), onPrimary = Color.White,
-        primaryContainer = Color(0xFFE9EEF2), onPrimaryContainer = Color(0xFF1F2933),
-        background = Color(0xFFF6F7F5), surface = Color.White,
-        onSurface = Color(0xFF202428), outlineVariant = Color(0xFFE5E8E5)
-    )
-    MaterialTheme(colorScheme = colors) {
-        CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl) {
-            Scaffold(bottomBar = {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    AppTab.entries.forEach { item ->
-                        val icon = when (item) {
-                            AppTab.HOME -> Icons.Outlined.Home
-                            AppTab.DEVICES -> Icons.Outlined.Router
-                            AppTab.UPDATES -> Icons.Outlined.SystemUpdate
-                        }
-                        NavigationBarItem(
-                            selected = tab == item,
-                            onClick = { tab = item },
-                            icon = { Icon(icon, contentDescription = item.title) },
-                            label = { Text(item.title) }
-                        )
-                    }
-                }
-            }) { padding ->
-                when (tab) {
-                    AppTab.HOME -> HomeScreen(context, Modifier.padding(padding))
-                    AppTab.DEVICES -> DevicesScreen(context, Modifier.padding(padding))
-                    AppTab.UPDATES -> UpdatesScreen(context, Modifier.padding(padding))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AppHeader() {
-    Column(Modifier.fillMaxWidth()) {
-        Text("HAI MANAGER", fontSize = 25.sp, style = MaterialTheme.typography.titleLarge)
-        Text("Huawei + ZTE • إدارة الراوتر بدون تعقيد", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f))
-    }
-}
-
-@Composable
-private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val discovery = remember { RouterDiscoveryService(context.applicationContext) }
     val inspector = remember { RouterInspectorService() }
-    val capabilityProbe = remember { RouterCapabilityProbeService() }
+    val probe = remember { RouterCapabilityProbeService() }
     val actions = remember { RouterActionService() }
+
+    var tab by remember { mutableStateOf(AppTab.HOME) }
     var scanning by remember { mutableStateOf(false) }
     var router by remember { mutableStateOf<RouterSnapshot?>(null) }
     var inspection by remember { mutableStateOf<RouterInspection?>(null) }
     var actionBusy by remember { mutableStateOf(false) }
     var actionMessage by remember { mutableStateOf<String?>(null) }
+    var loginUrl by remember { mutableStateOf<String?>(null) }
     var confirmReboot by remember { mutableStateOf(false) }
-    var nrBands by remember { mutableStateOf("78") }
-    var routerPanelUrl by remember { mutableStateOf<String?>(null) }
 
     fun scan() {
         scope.launch {
@@ -169,8 +119,8 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
             actionMessage = null
             val found = discovery.discover()
             router = found
-            val baseInspection = if (found.connected && found.managementUrl != null) inspector.inspect(found) else null
-            inspection = baseInspection?.let { capabilityProbe.enrich(it) }
+            val inspected = if (found.connected && found.managementUrl != null) inspector.inspect(found) else null
+            inspection = inspected?.let { probe.enrich(it) }
             scanning = false
         }
     }
@@ -182,328 +132,328 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
             actionMessage = result.message
             actionBusy = false
             if (result.success) {
-                inspection = inspection?.let { current -> capabilityProbe.enrich(inspector.inspect(current.snapshot)) }
+                inspection = inspection?.let { current -> probe.enrich(inspector.inspect(current.snapshot)) }
             }
         }
     }
 
-    if (confirmReboot) {
-        AlertDialog(
-            onDismissRequest = { confirmReboot = false },
-            title = { Text("إعادة تشغيل الراوتر؟") },
-            text = { Text("سينقطع الاتصال لبضع دقائق أثناء إعادة التشغيل.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmReboot = false
-                    inspection?.let { current -> runAction { actions.reboot(current) } }
-                }) { Text("إعادة التشغيل") }
-            },
-            dismissButton = { TextButton(onClick = { confirmReboot = false }) { Text("إلغاء") } }
-        )
-    }
+    LaunchedEffect(Unit) { scan() }
 
-    routerPanelUrl?.let { url ->
-        InAppRouterPanel(
-            url = url,
-            onClose = {
-                routerPanelUrl = null
-                scan()
-            }
-        )
-        return
-    }
-
-    Column(
-        modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        AppHeader()
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(inspection?.device?.model ?: router?.model ?: "الراوتر", style = MaterialTheme.typography.titleLarge)
-                        Text(inspection?.message ?: router?.message ?: "اتصل براوتر Huawei أو ZTE ثم ابدأ الفحص")
+    HaiTheme {
+        CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl) {
+            loginUrl?.let { url ->
+                InAppRouterPanel(
+                    url = url,
+                    onClose = {
+                        loginUrl = null
+                        scan()
                     }
-                    Icon(Icons.Outlined.Router, null, Modifier.size(40.dp))
-                }
-                router?.let {
-                    HorizontalDivider()
-                    DetailRow("الشركة", it.brand.displayName)
-                    it.gateway?.let { gateway -> DetailRow("Gateway", gateway) }
-                    if (it.confidence > 0) DetailRow("دقة التعرف", "${it.confidence}%")
-                }
-                inspection?.let { StatusBadge(it.accessStatus) }
-                Button(onClick = { scan() }, enabled = !scanning, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                    if (scanning) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                    else Text(if (router == null) "فحص الراوتر" else "إعادة الفحص")
-                }
-                router?.managementUrl?.let { url ->
-                    OutlinedButton(
-                        onClick = { routerPanelUrl = url },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("فتح إعدادات الراوتر داخل التطبيق") }
-                    if (router?.brand == RouterBrand.ZTE || router?.brand == RouterBrand.HUAWEI) {
-                        OutlinedButton(
-                            onClick = { context.startActivity(Intent(context, WifiToolsActivity::class.java).putExtra(WifiToolsActivity.EXTRA_URL, url)) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text("إدارة Wi-Fi") }
-                        OutlinedButton(
-                            onClick = { context.startActivity(Intent(context, SimToolsActivity::class.java).putExtra(SimToolsActivity.EXTRA_URL, url)) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text("إدارة SIM") }
-                    }
-                }
+                )
+                return@CompositionLocalProvider
             }
-        }
 
-        inspection?.device?.let { device ->
-            SimpleCard("معلومات الجهاز") {
-                OptionalDetailRow("الموديل", device.model)
-                OptionalDetailRow("IMEI", device.imei)
-                OptionalDetailRow("الرقم التسلسلي", device.serialNumber)
-                OptionalDetailRow("Firmware", device.firmwareVersion)
-                OptionalDetailRow("Hardware", device.hardwareVersion)
-                OptionalDetailRow("WebUI", device.webUiVersion)
-                OptionalDetailRow("WAN IP", device.wanIp)
+            if (confirmReboot) {
+                AlertDialog(
+                    onDismissRequest = { confirmReboot = false },
+                    title = { Text("إعادة تشغيل الراوتر؟") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            confirmReboot = false
+                            inspection?.let { current -> runAction { actions.reboot(current) } }
+                        }) { Text("إعادة التشغيل") }
+                    },
+                    dismissButton = { TextButton(onClick = { confirmReboot = false }) { Text("إلغاء") } }
+                )
             }
-        }
 
-        inspection?.let { current ->
-            val profile = current.firmwareProfileInfo
-            val readiness = current.profileProbeReadiness
-            SimpleCard("Firmware Profile") {
-                DetailRow("Profile", profile.profileId)
-                DetailRow("التحقق", profile.verification.displayName)
-                DetailRow("Band Lock", profile.bandLock.displayName)
-                DetailRow("Network Lock / NCK", profile.nckEntry.displayName)
-                DetailRow("جاهزية شروط الكتابة", if (readiness.ready) "مكتملة" else "محجوبة")
-                if (readiness.missing.isNotEmpty()) {
-                    Text("Probes الناقصة: ${readiness.missing.sorted().joinToString(", ")}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f), fontSize = 12.sp)
-                }
-                Text(profile.notes, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-            }
-        }
-
-        inspection?.let { current ->
-            current.probeReport?.let { report ->
-                SimpleCard("Capability Probe") {
-                    DetailRow("Firmware Fingerprint", report.firmwareFingerprint)
-                    DetailRow("الملخص", report.summary)
-                    report.items.forEach { item ->
-                        DetailRow(item.label, item.status.displayName)
-                        item.detail?.let { detail ->
-                            Text(detail, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 12.sp)
-                        }
-                    }
-                    report.bandSelection?.let { band ->
-                        HorizontalDivider()
-                        DetailRow("مصدر Band", band.source)
-                        OptionalDetailRow("NetworkBand raw", band.networkBandRaw)
-                        OptionalDetailRow("LTEBand raw", band.lteBandMaskRaw)
-                        OptionalDetailRow("NRBand raw", band.nrBandMaskRaw)
-                        if (band.decodedLteBands.isNotEmpty()) {
-                            DetailRow("LTE decoded", band.decodedLteBands.joinToString(" + ") { "B$it" })
-                        }
-                        if (band.decodedNrBands.isNotEmpty()) {
-                            DetailRow("NR decoded", band.decodedNrBands.joinToString(" + ") { "n$it" })
-                        }
-                        if (band.advertisedLteBands.isNotEmpty()) {
-                            DetailRow("LTE المعلنة", band.advertisedLteBands.joinToString(", ") { "B$it" })
-                        }
-                        band.note?.let { Text(it, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 12.sp) }
-                    }
-                    DetailRow("Network Lock قراءة", if (report.networkLockReadable) "متاحة" else "غير ظاهرة")
-                    DetailRow("NCK كتابة موثقة", if (report.nckEntryVerified) "نعم" else "لا")
-                    HorizontalDivider()
-                    Text("التقرير المنقّح لا يتضمن IMEI أو Serial أو IMSI/ICCID أو WAN IP أو SSID أو Gateway أو Tokens/Cookies.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
-                    OutlinedButton(
-                        onClick = {
-                            val text = RouterDiagnosticsReport.build(current)
-                            val send = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, "HAI MANAGER diagnostic")
-                                putExtra(Intent.EXTRA_TEXT, text)
+            Scaffold(
+                contentWindowInsets = WindowInsets.safeDrawing,
+                bottomBar = {
+                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                        AppTab.entries.forEach { item ->
+                            val icon = when (item) {
+                                AppTab.HOME -> Icons.Outlined.Home
+                                AppTab.ROUTER -> Icons.Outlined.Router
+                                AppTab.UPDATES -> Icons.Outlined.SystemUpdate
                             }
-                            context.startActivity(Intent.createChooser(send, "مشاركة تقرير التشخيص"))
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("مشاركة تقرير تشخيص منقّح") }
+                            NavigationBarItem(
+                                selected = tab == item,
+                                onClick = { tab = item },
+                                icon = { Icon(icon, contentDescription = null) },
+                                label = { Text(item.title) }
+                            )
+                        }
+                    }
+                }
+            ) { padding ->
+                when (tab) {
+                    AppTab.HOME -> HomeScreen(
+                        context = context,
+                        router = router,
+                        inspection = inspection,
+                        scanning = scanning,
+                        modifier = Modifier.padding(padding),
+                        onScan = ::scan,
+                        onLogin = { loginUrl = router?.managementUrl },
+                        onRouter = { tab = AppTab.ROUTER }
+                    )
+                    AppTab.ROUTER -> RouterScreen(
+                        inspection = inspection,
+                        router = router,
+                        scanning = scanning,
+                        actionBusy = actionBusy,
+                        actionMessage = actionMessage,
+                        modifier = Modifier.padding(padding),
+                        onScan = ::scan,
+                        onLogin = { loginUrl = router?.managementUrl },
+                        onAction = ::runAction,
+                        actions = actions,
+                        onReboot = { confirmReboot = true }
+                    )
+                    AppTab.UPDATES -> UpdatesScreen(context, Modifier.padding(padding))
                 }
             }
         }
-
-        inspection?.security?.takeIf { it.hasData }?.let { security ->
-            SimpleCard("SIM وقفل الشبكة") {
-                OptionalDetailRow("حالة SIM", security.simState)
-                OptionalDetailRow("حالة PIN", security.pinState)
-                OptionalDetailRow("محاولات PIN المتبقية", security.pinAttemptsRemaining)
-                OptionalDetailRow("محاولات PUK المتبقية", security.pukAttemptsRemaining)
-                OptionalDetailRow("قفل الشبكة", security.networkLockState)
-                OptionalDetailRow("محاولات فك الشبكة المتبقية", security.unlockAttemptsRemaining)
-                OptionalDetailRow("ICCID", security.iccid)
-                OptionalDetailRow("IMSI", security.imsi)
-            }
-        }
-
-        inspection?.let { RouterCarrierLockCard(it) }
-
-        inspection?.signal?.takeIf { it.hasData }?.let { SignalCard(it) }
-
-        inspection?.let { current ->
-            val caps = current.capabilities
-            val profile = current.firmwareProfileInfo
-            val bandWritable = current.snapshot.brand == RouterBrand.ZTE && profile.bandLock.canWrite
-            if (RouterCapability.NETWORK_MODE in caps || RouterCapability.REBOOT in caps || bandWritable) {
-                SimpleCard("أدوات الراوتر") {
-                    if (RouterCapability.NETWORK_MODE in caps && current.supportedNetworkModes.isNotEmpty()) {
-                        Text("أوضاع الشبكة", style = MaterialTheme.typography.titleSmall)
-                        current.supportedNetworkModes.forEach { mode ->
-                            OutlinedButton(
-                                onClick = { runAction { actions.setNetworkMode(current, mode) } },
-                                enabled = !actionBusy,
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text(mode.displayName) }
-                        }
-                    }
-                    if (bandWritable) {
-                        Text("قفل نطاقات 5G", style = MaterialTheme.typography.titleSmall)
-                        Text("حالة الدعم: ${profile.bandLock.displayName}")
-                        OutlinedTextField(
-                            value = nrBands,
-                            onValueChange = { nrBands = it },
-                            label = { Text("مثال: 78 أو 41,78") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedButton(
-                            onClick = {
-                                val bands = nrBands.split(',', '+', ' ').mapNotNull { it.trim().toIntOrNull() }
-                                runAction { actions.setZteNrBands(current, bands) }
-                            },
-                            enabled = !actionBusy,
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text("تطبيق قفل 5G") }
-                        if (profile.bandLock.displayName.contains("فحص")) {
-                            Text("سيجري التطبيق preflight بإعادة القيمة الحالية أولًا. إذا لم يمكن التحقق منها فلن يرسل القيمة الجديدة.")
-                        }
-                    }
-                    if (RouterCapability.REBOOT in caps) {
-                        Button(onClick = { confirmReboot = true }, enabled = !actionBusy, modifier = Modifier.fillMaxWidth()) {
-                            Text("إعادة تشغيل الراوتر")
-                        }
-                    }
-                    if (actionBusy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                    actionMessage?.let { Text(it) }
-                }
-            }
-        }
-
-        SimpleCard("التوافق") {
-            Text("HAI MANAGER يطابق Model + Firmware ثم يجري Capability Probe قراءة فقط. كل أمر حساس له probes مستقلة يجب أن تنجح قبل الكتابة، وBand Lock التجريبي لا يبدأ إلا بعد preflight يحافظ على القيمة الحالية ويتحقق منها.")
-        }
     }
 }
 
 @Composable
-private fun StatusBadge(status: RouterAccessStatus) {
-    val label = when (status) {
-        RouterAccessStatus.AVAILABLE -> "الإدارة متاحة"
-        RouterAccessStatus.AUTH_REQUIRED -> "تسجيل الدخول مطلوب"
-        RouterAccessStatus.UNSUPPORTED -> "غير مدعوم في المرحلة الحالية"
-        RouterAccessStatus.FAILED -> "لم تُقرأ التفاصيل"
-    }
-    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-        Text(label, Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
-    }
-}
+private fun HomeScreen(
+    context: Context,
+    router: RouterSnapshot?,
+    inspection: RouterInspection?,
+    scanning: Boolean,
+    modifier: Modifier,
+    onScan: () -> Unit,
+    onLogin: () -> Unit,
+    onRouter: () -> Unit
+) {
+    val connected = router?.connected == true
+    val needsLogin = inspection?.accessStatus == RouterAccessStatus.AUTH_REQUIRED
+    val url = router?.managementUrl
 
-@Composable
-private fun SignalCard(signal: CellularSignal) {
-    SimpleCard("حالة الشبكة") {
-        OptionalDetailRow("نوع الشبكة", signal.networkType)
-        OptionalDetailRow("الوضع المضبوط", signal.networkPreference)
-        OptionalDetailRow("المشغل", signal.operatorName)
-        OptionalDetailRow("RSRP", signal.rsrp)
-        OptionalDetailRow("RSRQ", signal.rsrq)
-        OptionalDetailRow("SINR", signal.sinr)
-        OptionalDetailRow("RSSI", signal.rssi)
-        OptionalDetailRow("النطاق الأساسي", signal.primaryBand)
-        if (signal.secondaryBands.isNotEmpty()) DetailRow("النطاقات المجمعة", signal.secondaryBands.joinToString(" + "))
-        OptionalDetailRow("نطاق 5G", signal.nrBand)
-        DetailRow("Carrier Aggregation", if (signal.carrierAggregation) "نشط" else "غير ظاهر")
-        OptionalDetailRow("PCI", signal.pci)
-        OptionalDetailRow("EARFCN", signal.earfcn)
-        OptionalDetailRow("NR-ARFCN", signal.nrarfcn)
-    }
-}
-
-@Composable
-internal fun SimpleCard(title: String, content: @Composable () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    HaiPage(
+        modifier = modifier,
+        title = "HAI MANAGER",
+        subtitle = "Huawei + ZTE"
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            content()
+        HaiCard {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        inspection?.device?.model ?: router?.model ?: "الراوتر",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    Text(
+                        when {
+                            scanning -> "جارٍ الفحص…"
+                            !connected -> "غير متصل"
+                            needsLogin -> "يحتاج تسجيل دخول"
+                            inspection?.accessStatus == RouterAccessStatus.AVAILABLE -> "متصل"
+                            else -> router?.brand?.displayName ?: "جاهز للفحص"
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                HaiStatusChip(
+                    text = when {
+                        scanning -> "فحص"
+                        inspection?.accessStatus == RouterAccessStatus.AVAILABLE -> "جاهز"
+                        needsLogin -> "دخول"
+                        connected -> "متصل"
+                        else -> "—"
+                    },
+                    active = inspection?.accessStatus == RouterAccessStatus.AVAILABLE
+                )
+            }
+
+            inspection?.signal?.let { signal ->
+                HorizontalDivider()
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    MiniMetric("الشبكة", signal.networkType ?: "—")
+                    MiniMetric("RSRP", signal.rsrp ?: "—")
+                    MiniMetric("SINR", signal.sinr ?: "—")
+                }
+            }
+
+            when {
+                scanning -> CircularProgressIndicator()
+                needsLogin && url != null -> Button(
+                    onClick = onLogin,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
+                ) { Text("تسجيل الدخول") }
+                else -> OutlinedButton(
+                    onClick = onScan,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
+                ) { Text(if (connected) "تحديث الحالة" else "فحص الراوتر") }
+            }
+        }
+
+        if (connected && url != null) {
+            HaiActionGrid(
+                listOf(
+                    HaiAction("Wi-Fi", Icons.Outlined.Wifi) {
+                        context.startActivity(Intent(context, WifiToolsActivity::class.java).putExtra(WifiToolsActivity.EXTRA_URL, url))
+                    },
+                    HaiAction("SIM", Icons.Outlined.SimCard) {
+                        context.startActivity(Intent(context, SimToolsActivity::class.java).putExtra(SimToolsActivity.EXTRA_URL, url))
+                    },
+                    HaiAction("الشبكة", Icons.Outlined.Router, onClick = onRouter),
+                    HaiAction("قفل المشغل", Icons.Outlined.Lock, onClick = onRouter)
+                )
+            )
         }
     }
 }
 
 @Composable
-internal fun DetailRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f))
-        Text(value)
+private fun MiniMetric(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, style = MaterialTheme.typography.titleMedium)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
     }
 }
 
 @Composable
-internal fun OptionalDetailRow(label: String, value: String?) {
-    value?.takeIf { it.isNotBlank() }?.let { DetailRow(label, it) }
-}
+private fun RouterScreen(
+    inspection: RouterInspection?,
+    router: RouterSnapshot?,
+    scanning: Boolean,
+    actionBusy: Boolean,
+    actionMessage: String?,
+    modifier: Modifier,
+    onScan: () -> Unit,
+    onLogin: () -> Unit,
+    onAction: (suspend () -> RouterActionResult) -> Unit,
+    actions: RouterActionService,
+    onReboot: () -> Unit
+) {
+    var nrBands by remember { mutableStateOf("78") }
+    val current = inspection
 
-@Composable
-private fun DevicesScreen(context: Context, modifier: Modifier = Modifier) {
-    val scope = rememberCoroutineScope()
-    val repository = remember { DeviceCatalogRepository(context.applicationContext) }
-    var status by remember { mutableStateOf(repository.status()) }
-    var syncing by remember { mutableStateOf(false) }
-    fun sync() {
-        scope.launch {
-            syncing = true
-            status = repository.sync() ?: repository.status()
-            syncing = false
+    HaiPage(
+        modifier = modifier,
+        title = current?.device?.model ?: router?.model ?: "الراوتر",
+        subtitle = router?.brand?.displayName?.takeIf { it != RouterBrand.UNKNOWN.displayName }
+    ) {
+        if (scanning) {
+            HaiCard { CircularProgressIndicator() }
+            return@HaiPage
         }
-    }
-    LaunchedEffect(Unit) { if (status.version == 0) sync() }
-    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        AppHeader()
-        Text("قاعدة الأجهزة", style = MaterialTheme.typography.titleLarge)
-        Text("الأولوية الحالية: Firmware profiles وCapability probes دقيقة لـ Huawei وZTE قبل إضافة أي شركة أخرى.")
-        CatalogCard(status, syncing, ::sync)
-        SimpleCard("ZTE") {
-            Text("MC801A / MC888 / MC889 / MC7010 وعائلات MF286/MF289/MF297: Profile مطابق للـFirmware، Capability Probe، تشخيص SIM/Network Lock، وBand Lock موثق أو Runtime-preflight حسب الحالة.")
-        }
-        SimpleCard("Huawei") {
-            Text("H155/H158/H138/H122/H112 وعائلات B818/B715/B628/B535/B525: HiLink/WebUI مع Profile لكل Firmware، تشخيص LTEBand/NetworkBand وقائمة النطاقات. Band/NCK يبقيان قراءة فقط حتى توثيق الكتابة.")
-        }
-    }
-}
 
-@Composable
-private fun CatalogCard(status: CatalogStatus, syncing: Boolean, onSync: () -> Unit) {
-    SimpleCard("قاعدة التعريفات الحية") {
-        DetailRow("الإصدار", if (status.version > 0) status.version.toString() else "—")
-        DetailRow("عدد الأجهزة", if (status.deviceCount > 0) status.deviceCount.toString() else "—")
-        DetailRow("آخر تحديث", status.updatedAt.ifBlank { "—" })
-        OutlinedButton(onClick = onSync, enabled = !syncing, modifier = Modifier.fillMaxWidth()) {
-            if (syncing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("تحديث قاعدة الأجهزة")
+        if (router?.connected != true) {
+            HaiCard {
+                Text("لا يوجد راوتر متصل")
+                Button(onClick = onScan, modifier = Modifier.fillMaxWidth()) { Text("فحص الراوتر") }
+            }
+            return@HaiPage
+        }
+
+        if (current?.accessStatus == RouterAccessStatus.AUTH_REQUIRED) {
+            HaiCard {
+                Text("تسجيل الدخول مطلوب")
+                Button(onClick = onLogin, modifier = Modifier.fillMaxWidth()) { Text("تسجيل الدخول") }
+            }
+            return@HaiPage
+        }
+
+        if (current == null || current.accessStatus != RouterAccessStatus.AVAILABLE) {
+            HaiCard {
+                Text("تعذر قراءة بيانات الراوتر")
+                OutlinedButton(onClick = onScan, modifier = Modifier.fillMaxWidth()) { Text("إعادة الفحص") }
+            }
+            return@HaiPage
+        }
+
+        HaiTwoPane(
+            first = {
+                HaiCard {
+                    HaiSectionTitle("الشبكة")
+                    val signal = current.signal
+                    HaiValueRow("المشغل", signal?.operatorName)
+                    HaiValueRow("النوع", signal?.networkType)
+                    HaiValueRow("RSRP", signal?.rsrp)
+                    HaiValueRow("RSRQ", signal?.rsrq)
+                    HaiValueRow("SINR", signal?.sinr)
+                    HaiValueRow("النطاق", signal?.primaryBand ?: signal?.bands?.joinToString(" + "))
+                    if (signal?.secondaryBands?.isNotEmpty() == true) {
+                        HaiValueRow("CA", signal.secondaryBands.joinToString(" + "))
+                    }
+                }
+            },
+            second = {
+                HaiCard {
+                    HaiSectionTitle("الجهاز")
+                    HaiValueRow("Firmware", current.device?.firmwareVersion)
+                    HaiValueRow("IMEI", current.device?.imei)
+                    HaiValueRow("Serial", current.device?.serialNumber)
+                    HaiValueRow("Hardware", current.device?.hardwareVersion)
+                }
+            }
+        )
+
+        RouterCarrierLockCard(current)
+
+        val caps = current.capabilities
+        if (RouterCapability.NETWORK_MODE in caps && current.supportedNetworkModes.isNotEmpty()) {
+            HaiCard {
+                HaiSectionTitle("وضع الشبكة")
+                HaiActionGrid(
+                    current.supportedNetworkModes.sortedBy(NetworkMode::ordinal).map { mode ->
+                        HaiAction(mode.displayName, Icons.Outlined.Router, enabled = !actionBusy) {
+                            onAction { actions.setNetworkMode(current, mode) }
+                        }
+                    }
+                )
+            }
+        }
+
+        val bandWritable = current.snapshot.brand == RouterBrand.ZTE && current.firmwareProfileInfo.bandLock.canWrite
+        if (bandWritable) {
+            HaiCard {
+                HaiSectionTitle("قفل 5G")
+                OutlinedTextField(
+                    value = nrBands,
+                    onValueChange = { nrBands = it.filter { ch -> ch.isDigit() || ch == ',' || ch == ' ' || ch == '+' } },
+                    label = { Text("n78 أو 41,78") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Button(
+                    onClick = {
+                        val bands = nrBands.split(',', '+', ' ').mapNotNull { it.trim().toIntOrNull() }
+                        onAction { actions.setZteNrBands(current, bands) }
+                    },
+                    enabled = !actionBusy && nrBands.any(Char::isDigit),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("تطبيق") }
+            }
+        }
+
+        if (RouterCapability.REBOOT in caps) {
+            OutlinedButton(
+                onClick = onReboot,
+                enabled = !actionBusy,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
+            ) {
+                Icon(Icons.Outlined.RestartAlt, contentDescription = null)
+                Text("  إعادة تشغيل الراوتر")
+            }
+        }
+
+        if (actionBusy) CircularProgressIndicator()
+        actionMessage?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+
+        OutlinedButton(onClick = onScan, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Outlined.Refresh, contentDescription = null)
+            Text("  تحديث")
         }
     }
 }
@@ -513,6 +463,7 @@ private fun UpdatesScreen(context: Context, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<UpdateCheckResult?>(null) }
+
     fun checkNow() {
         scope.launch {
             checking = true
@@ -520,35 +471,35 @@ private fun UpdatesScreen(context: Context, modifier: Modifier = Modifier) {
             checking = false
         }
     }
+
     LaunchedEffect(Unit) { checkNow() }
-    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        AppHeader()
-        Text("التحديثات", style = MaterialTheme.typography.titleLarge)
-        SimpleCard("HAI MANAGER ${BuildConfig.VERSION_NAME}") {
+
+    HaiPage(modifier = modifier, title = "التحديثات") {
+        HaiCard {
+            HaiValueRow("الإصدار", BuildConfig.VERSION_NAME)
             when {
-                checking -> Text("جارٍ التحقق من آخر إصدار…")
-                result is UpdateCheckResult.Failure -> {
-                    Text("تعذر التحقق من التحديثات")
-                    Text((result as UpdateCheckResult.Failure).message)
-                }
+                checking -> CircularProgressIndicator()
+                result is UpdateCheckResult.Failure -> Text("تعذر التحقق من التحديث")
                 result is UpdateCheckResult.Success -> {
                     val update = (result as UpdateCheckResult.Success).update
-                    if (update.available) UpdateAvailableCard(context, update) else Text("أنت تستخدم أحدث إصدار متوفر (${update.versionName}).")
+                    if (update.available) UpdateAvailableCard(context, update)
+                    else HaiStatusChip("أحدث إصدار")
                 }
-                else -> Text("لم يتم التحقق بعد")
             }
-            Button(onClick = { checkNow() }, enabled = !checking, modifier = Modifier.fillMaxWidth()) { Text("البحث عن تحديثات الآن") }
+            OutlinedButton(onClick = ::checkNow, enabled = !checking, modifier = Modifier.fillMaxWidth()) {
+                Text("فحص التحديث")
+            }
         }
-        Text("قناة التحديث تتحقق كل 6 ساعات، وتتحقق من SHA-256 وشهادة التوقيع الدائمة قبل فتح مثبت Android.")
     }
 }
 
 @Composable
 private fun UpdateAvailableCard(context: Context, update: AppUpdate) {
-    Text("يتوفر الإصدار ${update.versionName}", style = MaterialTheme.typography.titleMedium)
-    if (update.notes.isNotBlank()) Text(update.notes)
-    Text(if (update.signatureStable) "التوقيع ثابت — يمكن التثبيت فوق النسخة الحالية" else "قناة اختبار — التوقيع الثابت غير مفعّل")
+    Text("الإصدار ${update.versionName} متوفر", style = MaterialTheme.typography.titleMedium)
     if (update.downloadable) {
-        Button(onClick = { ApkUpdateInstaller.downloadAndInstall(context, update) }, modifier = Modifier.fillMaxWidth()) { Text("تنزيل التحديث") }
-    } else Text("ملف APK لم يُنشر بعد")
+        Button(
+            onClick = { ApkUpdateInstaller.downloadAndInstall(context, update) },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("تنزيل وتثبيت") }
+    }
 }
