@@ -100,6 +100,7 @@ data class RouterInspection(
     val wifi: RouterWifiInfo? = null,
     val capabilities: Set<RouterCapability> = emptySet(),
     val supportedNetworkModes: Set<NetworkMode> = emptySet(),
+    val probeReport: RouterCapabilityReport? = null,
     val message: String = ""
 )
 
