@@ -1,13 +1,13 @@
 {
-  "versionCode": 7,
-  "versionName": "0.4.0",
+  "versionCode": 8,
+  "versionName": "0.4.1",
   "apkUrl": "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/HAI-MANAGER.apk",
-  "notes": "إصلاح سلسلة التوقيع الدائمة وتحديثات HAI MANAGER الآمنة.",
+  "notes": "تحسين موثوقية أوامر الراوتر، دعم تشخيص Netgear Nighthawk وحالة Firmware الرسمية، وتحسين مزامنة قاعدة الأجهزة.",
   "mandatory": false,
   "signatureStable": true,
   "signingCertSha256": "D59B0F985ED8CF4A903938B7904A5F33EDA01E8817E994B6A20D78D164BC2441",
-  "sha256": "D9F60D21A0AA8EC8ABA16582696847F8D25FF4CC8633E8E93017E2D16E20D75F",
+  "sha256": "C1818311F8C0404A086F9524D8704CCF6526A9A0B0DF50B7B44CDF61BB709522",
   "channel": "beta",
-  "publishedAt": "2026-09-14T20:31:59Z",
-  "catalogVersion": 2
+  "publishedAt": "2026-09-14T20:38:17Z",
+  "catalogVersion": 5
 }
