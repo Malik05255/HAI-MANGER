@@ -25,6 +25,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.hai.manager.BuildConfig
 import com.hai.manager.MainActivity
+import com.hai.manager.catalog.DeviceCatalogRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -90,8 +91,9 @@ class UpdateWorker(
     params: WorkerParameters
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
-        val update = UpdateRepository().check() ?: return Result.success()
-        if (update.available) UpdateNotifications.show(applicationContext, update)
+        DeviceCatalogRepository(applicationContext).sync()
+        val update = UpdateRepository().check()
+        if (update?.available == true) UpdateNotifications.show(applicationContext, update)
         return Result.success()
     }
 }
