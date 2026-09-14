@@ -2,6 +2,7 @@ package com.hai.manager
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -24,18 +25,22 @@ class RouterLoginActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
         val hint = TextView(this).apply {
-            text = "سجّل الدخول إلى لوحة الراوتر، ثم اضغط تم"
+            text = "سجّل الدخول إلى لوحة الراوتر. بعد نجاح الدخول يمكنك العودة للفحص أو فتح أدوات Wi-Fi."
             textSize = 16f
             setPadding(24, 20, 24, 16)
         }
+        val wifiTools = Button(this).apply {
+            text = "إدارة Wi-Fi"
+            setOnClickListener {
+                CookieManager.getInstance().flush()
+                startActivity(Intent(this@RouterLoginActivity, WifiToolsActivity::class.java).putExtra(WifiToolsActivity.EXTRA_URL, url))
+            }
+        }
         val done = Button(this).apply {
-            text = "تم تسجيل الدخول"
+            text = "تم تسجيل الدخول — رجوع للفحص"
             setOnClickListener {
                 CookieManager.getInstance().flush()
                 setResult(RESULT_OK)
@@ -43,11 +48,7 @@ class RouterLoginActivity : Activity() {
             }
         }
         val webView = WebView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = false
@@ -60,6 +61,7 @@ class RouterLoginActivity : Activity() {
         webView.loadUrl(url)
 
         root.addView(hint)
+        root.addView(wifiTools)
         root.addView(done)
         root.addView(webView)
         setContentView(root)

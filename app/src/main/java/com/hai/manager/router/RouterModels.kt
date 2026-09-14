@@ -1,14 +1,8 @@
 package com.hai.manager.router
 
 enum class RouterBrand(val displayName: String) {
-    ZTE("ZTE"),
-    HUAWEI("Huawei"),
-    NOKIA("Nokia"),
-    NETGEAR("Netgear"),
-    TP_LINK("TP-Link"),
-    ZYXEL("Zyxel"),
-    D_LINK("D-Link"),
-    UNKNOWN("غير معروف")
+    ZTE("ZTE"), HUAWEI("Huawei"), NOKIA("Nokia"), NETGEAR("Netgear"),
+    TP_LINK("TP-Link"), ZYXEL("Zyxel"), D_LINK("D-Link"), UNKNOWN("غير معروف")
 }
 
 data class RouterSnapshot(
@@ -23,30 +17,16 @@ data class RouterSnapshot(
 )
 
 enum class RouterCapability(val displayName: String) {
-    DEVICE_INFO("معلومات الجهاز"),
-    CELLULAR_SIGNAL("إشارة الشبكة"),
-    NETWORK_STATUS("حالة الشبكة"),
-    SESSION_COOKIES("جلسة إدارة"),
-    CA_DETAILS("تجميع الترددات CA"),
-    NETWORK_MODE("أوضاع الشبكة"),
-    BAND_LOCK("قفل النطاقات"),
-    REBOOT("إعادة التشغيل"),
-    WIFI_SETTINGS("إعدادات Wi-Fi"),
+    DEVICE_INFO("معلومات الجهاز"), CELLULAR_SIGNAL("إشارة الشبكة"), NETWORK_STATUS("حالة الشبكة"),
+    SESSION_COOKIES("جلسة إدارة"), CA_DETAILS("تجميع الترددات CA"), NETWORK_MODE("أوضاع الشبكة"),
+    BAND_LOCK("قفل النطاقات"), REBOOT("إعادة التشغيل"), WIFI_SETTINGS("إعدادات Wi-Fi"),
     FIRMWARE_INFO("معلومات النظام")
 }
 
-enum class RouterAccessStatus {
-    AVAILABLE,
-    AUTH_REQUIRED,
-    UNSUPPORTED,
-    FAILED
-}
+enum class RouterAccessStatus { AVAILABLE, AUTH_REQUIRED, UNSUPPORTED, FAILED }
 
 enum class NetworkMode(val displayName: String) {
-    AUTO("تلقائي"),
-    LTE_ONLY("4G فقط"),
-    NR_LTE("5G / 4G"),
-    NR_ONLY("5G فقط")
+    AUTO("تلقائي"), LTE_ONLY("4G فقط"), NR_LTE("5G / 4G"), NR_ONLY("5G فقط")
 }
 
 data class RouterDeviceInfo(
@@ -83,20 +63,31 @@ data class CellularSignal(
             .any { !it.isNullOrBlank() } || bands.isNotEmpty()
 }
 
+data class RouterWifiInfo(
+    val enabled: Boolean? = null,
+    val ssid: String? = null,
+    val hidden: Boolean? = null,
+    val channel: String? = null,
+    val mode: String? = null,
+    val securityMode: String? = null,
+    val canToggle: Boolean = false,
+    val canRename: Boolean = false
+) {
+    val hasData: Boolean get() = enabled != null || !ssid.isNullOrBlank() || !channel.isNullOrBlank() || !mode.isNullOrBlank()
+}
+
 data class RouterInspection(
     val snapshot: RouterSnapshot,
     val accessStatus: RouterAccessStatus,
     val device: RouterDeviceInfo? = null,
     val signal: CellularSignal? = null,
+    val wifi: RouterWifiInfo? = null,
     val capabilities: Set<RouterCapability> = emptySet(),
     val supportedNetworkModes: Set<NetworkMode> = emptySet(),
     val message: String = ""
 )
 
-data class RouterActionResult(
-    val success: Boolean,
-    val message: String
-)
+data class RouterActionResult(val success: Boolean, val message: String)
 
 interface RouterAdapter {
     val brand: RouterBrand
@@ -131,16 +122,14 @@ object HuaweiRouterAdapter : RouterAdapter {
 
 object NokiaRouterAdapter : RouterAdapter {
     override val brand = RouterBrand.NOKIA
-    override fun confidence(page: String, headers: Map<String, String>): Int =
-        if ((page + headers.values.joinToString(" ")).contains("nokia", ignoreCase = true)) 100 else 0
+    override fun confidence(page: String, headers: Map<String, String>) =
+        if ((page + headers.values.joinToString(" ")).contains("nokia", true)) 100 else 0
 }
-
 object NetgearRouterAdapter : RouterAdapter {
     override val brand = RouterBrand.NETGEAR
-    override fun confidence(page: String, headers: Map<String, String>): Int =
-        if ((page + headers.values.joinToString(" ")).contains("netgear", ignoreCase = true)) 100 else 0
+    override fun confidence(page: String, headers: Map<String, String>) =
+        if ((page + headers.values.joinToString(" ")).contains("netgear", true)) 100 else 0
 }
-
 object TpLinkRouterAdapter : RouterAdapter {
     override val brand = RouterBrand.TP_LINK
     override fun confidence(page: String, headers: Map<String, String>): Int {
@@ -150,11 +139,5 @@ object TpLinkRouterAdapter : RouterAdapter {
 }
 
 object RouterAdapters {
-    val all: List<RouterAdapter> = listOf(
-        ZteRouterAdapter,
-        HuaweiRouterAdapter,
-        NokiaRouterAdapter,
-        NetgearRouterAdapter,
-        TpLinkRouterAdapter
-    )
+    val all: List<RouterAdapter> = listOf(ZteRouterAdapter, HuaweiRouterAdapter, NokiaRouterAdapter, NetgearRouterAdapter, TpLinkRouterAdapter)
 }
