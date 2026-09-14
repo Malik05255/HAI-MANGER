@@ -90,12 +90,15 @@ class RouterCapabilityProbeService {
         val lockState = value("network_lock_status", "network_lock")
         val lockAttempts = value("network_unlock_remain_count", "unlock_nck_time")
         val wifiVisible = value("wifiEnabled") != null || value("SSID1") != null
+        val lockDetail = listOfNotNull(lockState, lockAttempts?.let { "محاولات: $it" })
+            .joinToString(" • ")
+            .takeIf { it.isNotBlank() }
 
         val items = listOf(
             item("zte_action_seed", "مفتاح أوامر ZTE", actionSeedReady, if (actionSeedReady) "wa/cr/RD متاحة" else null),
             item("network_mode_read", "قراءة وضع الشبكة", networkMode != null, networkMode),
             item("nr_band_state", "قراءة حالة Band Lock", nrRaw != null, nrRaw),
-            item("network_lock_read", "قراءة Network Lock", lockState != null || lockAttempts != null, listOfNotNull(lockState, lockAttempts?.let { "محاولات: $it" }).joinToString(" • ").ifBlank { null }),
+            item("network_lock_read", "قراءة Network Lock", lockState != null || lockAttempts != null, lockDetail),
             item("wifi_read", "قراءة Wi-Fi", wifiVisible),
             CapabilityProbeItem(
                 id = "nck_write",
@@ -153,14 +156,20 @@ class RouterCapabilityProbeService {
         val lockReadable = inspection.security?.let {
             !it.networkLockState.isNullOrBlank() || !it.unlockAttemptsRemaining.isNullOrBlank()
         } == true
+        val bandDetail = listOfNotNull(lteMask?.let { "LTE=$it" }, nrMask?.let { "NR=$it" })
+            .joinToString(" • ")
+            .takeIf { it.isNotBlank() }
+        val wifiDetail = listOfNotNull(ssid, wifiEnabled?.let { "enabled=$it" })
+            .joinToString(" • ")
+            .takeIf { it.isNotBlank() }
 
         val items = listOf(
             CapabilityProbeItem("huawei_session_token", "جلسة HiLink", status(token, tokenValue != null), tokenValue?.let { "Token متاح" }),
             CapabilityProbeItem("network_mode_read", "قراءة وضع الشبكة", status(mode, networkMode != null), networkMode),
-            CapabilityProbeItem("band_selection_read", "قراءة Band selection", status(mode, lteMask != null || nrMask != null || networkBand != null), listOfNotNull(lteMask?.let { "LTE=$it" }, nrMask?.let { "NR=$it" }).joinToString(" • ").ifBlank { null }),
+            CapabilityProbeItem("band_selection_read", "قراءة Band selection", status(mode, lteMask != null || nrMask != null || networkBand != null), bandDetail),
             CapabilityProbeItem("mode_list", "قائمة النطاقات المعلنة", status(modeList, advertisedBands.isNotEmpty()), advertisedBands.takeIf { it.isNotEmpty() }?.joinToString(", ") { "B$it" }),
             CapabilityProbeItem("sim_security", "حالة SIM/PIN", status(pin, pinState != null), pinState),
-            CapabilityProbeItem("wifi_read", "قراءة Wi-Fi", status(wifi, ssid != null || wifiEnabled != null), listOfNotNull(ssid, wifiEnabled?.let { "enabled=$it" }).joinToString(" • ").ifBlank { null }),
+            CapabilityProbeItem("wifi_read", "قراءة Wi-Fi", status(wifi, ssid != null || wifiEnabled != null), wifiDetail),
             CapabilityProbeItem("network_lock_read", "قراءة Network Lock", if (lockReadable) CapabilityProbeStatus.AVAILABLE else CapabilityProbeStatus.NOT_EXPOSED),
             CapabilityProbeItem("nck_write", "إدخال NCK", CapabilityProbeStatus.NOT_EXPOSED, "لا يوجد endpoint كتابة موثق في Profile الحالي")
         )
@@ -235,7 +244,7 @@ class RouterCapabilityProbeService {
         return MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(Charsets.UTF_8))
             .take(8)
-            .joinToString("") { "%02X".format(it) }
+            .joinToString("") { byte -> "%02X".format(byte.toInt() and 0xFF) }
     }
 
     private fun summary(items: List<CapabilityProbeItem>): String {
