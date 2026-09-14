@@ -15,8 +15,27 @@ android {
         applicationId = "com.hai.manager"
         minSdk = 26
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
+    }
+
+    val releaseKeystore = System.getenv("HAI_KEYSTORE_PATH")
+    if (!releaseKeystore.isNullOrBlank()) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("HAI_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("HAI_KEY_ALIAS")
+                keyPassword = System.getenv("HAI_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
     }
 
     buildFeatures {

@@ -31,9 +31,11 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.Instant
 import java.util.concurrent.TimeUnit
 
-private const val FEED_URL = "https://raw.githubusercontent.com/Malik05255/HAI-MANGER/main/update-feed.json"
+private const val RELEASE_FEED_URL = "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/update-feed.json"
+private const val LEGACY_FEED_URL = "https://raw.githubusercontent.com/Malik05255/HAI-MANGER/main/update-feed.json"
 private const val UPDATE_CHANNEL = "hai_manager_updates"
 
 data class AppUpdate(
@@ -41,41 +43,68 @@ data class AppUpdate(
     val versionName: String,
     val apkUrl: String,
     val notes: String,
-    val mandatory: Boolean
+    val mandatory: Boolean,
+    val signatureStable: Boolean,
+    val sha256: String,
+    val channel: String,
+    val publishedAt: String
 ) {
-    val available: Boolean get() = versionCode > BuildConfig.VERSION_CODE && apkUrl.isNotBlank()
+    val available: Boolean get() = versionCode > BuildConfig.VERSION_CODE
+    val downloadable: Boolean get() = apkUrl.isNotBlank()
+}
+
+sealed interface UpdateCheckResult {
+    data class Success(val update: AppUpdate) : UpdateCheckResult
+    data class Failure(val message: String) : UpdateCheckResult
 }
 
 class UpdateRepository {
-    suspend fun check(): AppUpdate? = withContext(Dispatchers.IO) {
-        runCatching {
-            val connection = URL(FEED_URL).openConnection() as HttpURLConnection
-            connection.connectTimeout = 5000
-            connection.readTimeout = 5000
-            connection.setRequestProperty("Cache-Control", "no-cache")
-            try {
-                if (connection.responseCode !in 200..299) return@runCatching null
-                val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-                AppUpdate(
-                    versionCode = json.optInt("versionCode"),
-                    versionName = json.optString("versionName"),
-                    apkUrl = json.optString("apkUrl"),
-                    notes = json.optString("notes"),
-                    mandatory = json.optBoolean("mandatory", false)
-                )
-            } finally {
-                connection.disconnect()
+    suspend fun check(): UpdateCheckResult = withContext(Dispatchers.IO) {
+        val urls = listOf(RELEASE_FEED_URL, LEGACY_FEED_URL)
+        var lastError = "تعذر الوصول إلى خادم التحديث"
+        for (base in urls) {
+            val result = runCatching { fetch(base) }
+            if (result.isSuccess) return@withContext UpdateCheckResult.Success(result.getOrThrow())
+            lastError = result.exceptionOrNull()?.message ?: lastError
+        }
+        UpdateCheckResult.Failure(lastError)
+    }
+
+    private fun fetch(base: String): AppUpdate {
+        val separator = if ('?' in base) '&' else '?'
+        val url = URL("$base${separator}t=${System.currentTimeMillis()}")
+        val connection = url.openConnection() as HttpURLConnection
+        connection.connectTimeout = 6500
+        connection.readTimeout = 6500
+        connection.useCaches = false
+        connection.setRequestProperty("Cache-Control", "no-cache, no-store")
+        connection.setRequestProperty("Pragma", "no-cache")
+        return try {
+            if (connection.responseCode !in 200..299) error("فشل التحقق: HTTP ${connection.responseCode}")
+            val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+            AppUpdate(
+                versionCode = json.optInt("versionCode"),
+                versionName = json.optString("versionName"),
+                apkUrl = json.optString("apkUrl"),
+                notes = json.optString("notes"),
+                mandatory = json.optBoolean("mandatory", false),
+                signatureStable = json.optBoolean("signatureStable", false),
+                sha256 = json.optString("sha256"),
+                channel = json.optString("channel", "beta"),
+                publishedAt = json.optString("publishedAt", Instant.now().toString())
+            ).also {
+                require(it.versionCode > 0 && it.versionName.isNotBlank()) { "ملف التحديث غير صالح" }
             }
-        }.getOrNull()
+        } finally {
+            connection.disconnect()
+        }
     }
 }
 
 object UpdateScheduler {
     fun schedule(context: Context) {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-        val request = PeriodicWorkRequestBuilder<UpdateWorker>(12, TimeUnit.HOURS)
+        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        val request = PeriodicWorkRequestBuilder<UpdateWorker>(6, TimeUnit.HOURS)
             .setConstraints(constraints)
             .build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
@@ -86,14 +115,13 @@ object UpdateScheduler {
     }
 }
 
-class UpdateWorker(
-    appContext: Context,
-    params: WorkerParameters
-) : CoroutineWorker(appContext, params) {
+class UpdateWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         DeviceCatalogRepository(applicationContext).sync()
-        val update = UpdateRepository().check()
-        if (update?.available == true) UpdateNotifications.show(applicationContext, update)
+        when (val result = UpdateRepository().check()) {
+            is UpdateCheckResult.Success -> if (result.update.available) UpdateNotifications.show(applicationContext, result.update)
+            is UpdateCheckResult.Failure -> Unit
+        }
         return Result.success()
     }
 }
@@ -103,11 +131,9 @@ object UpdateNotifications {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(
-                NotificationChannel(
-                    UPDATE_CHANNEL,
-                    "تحديثات HAI MANAGER",
-                    NotificationManager.IMPORTANCE_DEFAULT
-                ).apply { description = "تنبيهات الإصدارات الجديدة وقاعدة الأجهزة" }
+                NotificationChannel(UPDATE_CHANNEL, "تحديثات HAI MANAGER", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = "تنبيهات الإصدارات الجديدة وقاعدة الأجهزة"
+                }
             )
         }
     }
@@ -119,18 +145,21 @@ object UpdateNotifications {
                 Manifest.permission.POST_NOTIFICATIONS
             ) != PackageManager.PERMISSION_GRANTED
         ) return
-
-        val intent = Intent(context, MainActivity::class.java)
         val pending = PendingIntent.getActivity(
             context,
             10,
-            intent,
+            Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val text = if (update.signatureStable) {
+            "الإصدار ${update.versionName} جاهز للتنزيل والتثبيت"
+        } else {
+            "الإصدار ${update.versionName} متوفر — قناة اختبار"
+        }
         val notification = NotificationCompat.Builder(context, UPDATE_CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("تحديث جديد لـ HAI MANAGER")
-            .setContentText("الإصدار ${update.versionName} متوفر الآن")
+            .setContentText(text)
             .setContentIntent(pending)
             .setAutoCancel(true)
             .build()
@@ -140,16 +169,14 @@ object UpdateNotifications {
 
 object ApkUpdateInstaller {
     fun downloadAndInstall(context: Context, update: AppUpdate) {
+        if (!update.downloadable) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
             context.startActivity(
-                Intent(
-                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                    Uri.parse("package:${context.packageName}")
-                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
             return
         }
-
         val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val fileName = "HAI-MANAGER-${update.versionName}.apk"
         val request = DownloadManager.Request(Uri.parse(update.apkUrl))
@@ -159,7 +186,6 @@ object ApkUpdateInstaller {
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, fileName)
         val downloadId = manager.enqueue(request)
-
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(receiverContext: Context, intent: Intent) {
                 if (intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L) != downloadId) return
@@ -172,11 +198,10 @@ object ApkUpdateInstaller {
                 runCatching { receiverContext.unregisterReceiver(this) }
             }
         }
-        val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
         ContextCompat.registerReceiver(
             context,
             receiver,
-            filter,
+            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
             ContextCompat.RECEIVER_EXPORTED
         )
     }

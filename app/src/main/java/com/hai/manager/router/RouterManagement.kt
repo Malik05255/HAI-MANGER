@@ -1,57 +1,88 @@
 package com.hai.manager.router
 
+import android.webkit.CookieManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.net.CookieManager
-import java.net.CookiePolicy
 import java.net.HttpURLConnection
-import java.net.URI
 import java.net.URL
+import java.net.URLEncoder
 
 class RouterHttpClient(private val baseUrl: String) {
-    private val cookieManager = CookieManager(null, CookiePolicy.ACCEPT_ALL)
-
-    suspend fun get(path: String): RouterHttpResponse = withContext(Dispatchers.IO) {
-        request(path)
+    suspend fun get(path: String, headers: Map<String, String> = emptyMap()): RouterHttpResponse = withContext(Dispatchers.IO) {
+        request("GET", path, null, null, headers)
     }
 
-    private fun request(path: String): RouterHttpResponse {
-        val url = resolve(path)
-        val uri = URI(url.toString())
-        val connection = url.openConnection() as HttpURLConnection
-        connection.connectTimeout = 3000
-        connection.readTimeout = 3000
-        connection.instanceFollowRedirects = true
-        connection.requestMethod = "GET"
-        connection.setRequestProperty("User-Agent", "HAI-MANAGER/0.2")
-        connection.setRequestProperty("Accept", "application/json, application/xml, text/xml, text/plain, */*")
+    suspend fun postForm(
+        path: String,
+        fields: Map<String, String>,
+        headers: Map<String, String> = emptyMap()
+    ): RouterHttpResponse = withContext(Dispatchers.IO) {
+        val body = fields.entries.joinToString("&") { (key, value) ->
+            "${URLEncoder.encode(key, Charsets.UTF_8.name())}=${URLEncoder.encode(value, Charsets.UTF_8.name())}"
+        }
+        request("POST", path, body, "application/x-www-form-urlencoded; charset=UTF-8", headers)
+    }
 
-        cookieManager.get(uri, emptyMap())["Cookie"]
-            ?.firstOrNull()
+    suspend fun postXml(
+        path: String,
+        xml: String,
+        headers: Map<String, String> = emptyMap()
+    ): RouterHttpResponse = withContext(Dispatchers.IO) {
+        request("POST", path, xml, "application/xml; charset=UTF-8", headers)
+    }
+
+    private fun request(
+        method: String,
+        path: String,
+        body: String?,
+        contentType: String?,
+        headers: Map<String, String>
+    ): RouterHttpResponse {
+        val url = resolve(path)
+        val connection = url.openConnection() as HttpURLConnection
+        connection.connectTimeout = 3500
+        connection.readTimeout = 3500
+        connection.instanceFollowRedirects = true
+        connection.requestMethod = method
+        connection.setRequestProperty("User-Agent", "HAI-MANAGER/0.3")
+        connection.setRequestProperty("Accept", "application/json, application/xml, text/xml, text/plain, */*")
+        connection.setRequestProperty("Referer", baseUrl.trimEnd('/') + "/")
+        connection.setRequestProperty("X-Requested-With", "XMLHttpRequest")
+        CookieManager.getInstance().getCookie(url.toString())
             ?.takeIf { it.isNotBlank() }
             ?.let { connection.setRequestProperty("Cookie", it) }
+        headers.forEach { (key, value) -> connection.setRequestProperty(key, value) }
+
+        if (body != null) {
+            connection.doOutput = true
+            if (contentType != null) connection.setRequestProperty("Content-Type", contentType)
+            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+        }
 
         return try {
             val code = connection.responseCode
-            val headerMap = connection.headerFields
-                .filterKeys { it != null }
-                .mapKeys { (key, _) -> key!! }
-                .mapValues { (_, values) -> values.orEmpty() }
-            runCatching { cookieManager.put(uri, headerMap) }
-
+            connection.headerFields.forEach { (name, values) ->
+                if (name != null && name.equals("Set-Cookie", ignoreCase = true)) {
+                    values.orEmpty().forEach { cookie -> CookieManager.getInstance().setCookie(url.toString(), cookie) }
+                }
+            }
+            CookieManager.getInstance().flush()
             val stream = if (code in 200..399) connection.inputStream else connection.errorStream
-            val body = stream?.bufferedReader()?.use { reader ->
+            val responseBody = stream?.bufferedReader()?.use { reader ->
                 buildString {
                     var total = 0
-                    while (total < 160_000) {
+                    while (total < 200_000) {
                         val line = reader.readLine() ?: break
                         append(line).append('\n')
                         total += line.length
                     }
                 }
             }.orEmpty()
-            RouterHttpResponse(code, body, headerMap.mapValues { it.value.joinToString(";") })
+            val responseHeaders = connection.headerFields
+                .filterKeys { it != null }
+                .mapValues { (_, values) -> values.orEmpty().joinToString(";") }
+            RouterHttpResponse(code, responseBody, responseHeaders)
         } finally {
             connection.disconnect()
         }
@@ -79,11 +110,7 @@ interface OperationalRouterAdapter {
 class RouterInspectorService {
     suspend fun inspect(snapshot: RouterSnapshot): RouterInspection {
         val baseUrl = snapshot.managementUrl
-            ?: return RouterInspection(
-                snapshot = snapshot,
-                accessStatus = RouterAccessStatus.FAILED,
-                message = "لا يوجد عنوان إدارة صالح لهذا الراوتر"
-            )
+            ?: return RouterInspection(snapshot, RouterAccessStatus.FAILED, message = "لا يوجد عنوان إدارة صالح لهذا الراوتر")
 
         val adapter = when (snapshot.brand) {
             RouterBrand.ZTE -> ZteOperationalAdapter
@@ -101,11 +128,7 @@ class RouterInspectorService {
 
         return runCatching { adapter.inspect(RouterHttpClient(baseUrl), snapshot) }
             .getOrElse {
-                RouterInspection(
-                    snapshot = snapshot,
-                    accessStatus = RouterAccessStatus.FAILED,
-                    message = "تعذر قراءة بيانات الراوتر من واجهة الإدارة"
-                )
+                RouterInspection(snapshot, RouterAccessStatus.FAILED, message = "تعذر قراءة بيانات الراوتر من واجهة الإدارة")
             }
     }
 }
@@ -114,44 +137,20 @@ object ZteOperationalAdapter : OperationalRouterAdapter {
     override val brand = RouterBrand.ZTE
 
     private val commands = listOf(
-        "DeviceName",
-        "model_name",
-        "product_name",
-        "SerialNumber",
-        "serial_number",
-        "imei",
-        "wa_inner_version",
-        "hardware_version",
-        "web_version",
-        "network_type",
-        "network_type_ex",
-        "network_provider",
-        "lte_rsrp",
-        "lte_rsrq",
-        "lte_snr",
-        "lte_rssi",
-        "Z5g_rsrp",
-        "Z5g_rsrq",
-        "Z5g_SINR",
-        "nr5g_rsrp",
-        "nr5g_rsrq",
-        "nr5g_snr",
-        "lte_ca_pcell_band",
-        "lte_ca_scell_band",
-        "nr5g_band",
-        "cell_id",
-        "pci",
-        "wan_ipaddr"
+        "DeviceName", "model_name", "product_name", "SerialNumber", "serial_number", "imei",
+        "wa_inner_version", "cr_version", "RD", "hardware_version", "web_version",
+        "network_type", "network_type_ex", "network_provider", "net_select", "current_network_mode",
+        "lte_rsrp", "lte_rsrq", "lte_snr", "lte_rssi", "Z5g_rsrp", "Z5g_rsrq", "Z5g_SINR",
+        "nr5g_rsrp", "nr5g_rsrq", "nr5g_snr", "lte_ca_pcell_band", "lte_ca_scell_band",
+        "lte_multi_ca_scell_info", "nr5g_band", "nr5g_action_band", "wan_active_band",
+        "wan_active_channel", "nr5g_action_channel", "cell_id", "pci", "lte_pci", "wan_ipaddr"
     ).joinToString(",")
 
     override suspend fun inspect(client: RouterHttpClient, snapshot: RouterSnapshot): RouterInspection {
         val response = client.get("/goform/goform_get_cmd_process?isTest=false&cmd=$commands&multi_data=1")
         if (response.code == 401 || response.code == 403) return authRequired(snapshot)
-
         val json = runCatching { JSONObject(response.body) }.getOrNull()
-        if (json == null) {
-            return if (looksLikeLogin(response.body)) authRequired(snapshot) else failed(snapshot)
-        }
+            ?: return if (looksLikeLogin(response.body)) authRequired(snapshot) else failed(snapshot)
 
         val device = RouterDeviceInfo(
             manufacturer = "ZTE",
@@ -164,50 +163,61 @@ object ZteOperationalAdapter : OperationalRouterAdapter {
             wanIp = json.firstString("wan_ipaddr")
         )
 
+        val primaryBand = json.firstString("lte_ca_pcell_band", "wan_active_band")
+        val secondaryBands = parseZteSecondaryBands(json.firstString("lte_multi_ca_scell_info"), json.firstString("lte_ca_scell_band"))
+        val nrBand = json.firstString("nr5g_band", "nr5g_action_band")
+        val bands = bandValues(primaryBand, secondaryBands.joinToString(","), nrBand)
         val signal = CellularSignal(
             networkType = json.firstString("network_type_ex", "network_type"),
+            networkPreference = json.firstString("net_select", "current_network_mode"),
             operatorName = json.firstString("network_provider"),
             rsrp = json.firstString("Z5g_rsrp", "nr5g_rsrp", "lte_rsrp").cleanMetric(),
             rsrq = json.firstString("Z5g_rsrq", "nr5g_rsrq", "lte_rsrq").cleanMetric(),
             sinr = json.firstString("Z5g_SINR", "nr5g_snr", "lte_snr").cleanMetric(),
             rssi = json.firstString("lte_rssi").cleanMetric(),
-            bands = bandValues(
-                json.firstString("lte_ca_pcell_band"),
-                json.firstString("lte_ca_scell_band"),
-                json.firstString("nr5g_band")
-            ),
+            bands = bands,
+            primaryBand = primaryBand,
+            secondaryBands = secondaryBands,
+            nrBand = nrBand,
+            carrierAggregation = secondaryBands.isNotEmpty() || bands.size > 1,
             cellId = json.firstString("cell_id"),
-            pci = json.firstString("pci")
+            pci = json.firstString("pci", "lte_pci"),
+            earfcn = json.firstString("wan_active_channel"),
+            nrarfcn = json.firstString("nr5g_action_channel")
         )
 
-        val hasData = listOf(
-            device.model,
-            device.serialNumber,
-            device.imei,
-            device.firmwareVersion,
-            device.hardwareVersion,
-            signal.networkType,
-            signal.rsrp,
-            signal.sinr
-        ).any { !it.isNullOrBlank() }
-
-        if (!hasData && json.optString("result").equals("failure", ignoreCase = true)) {
-            return authRequired(snapshot)
-        }
+        val hasData = listOf(device.model, device.serialNumber, device.imei, device.firmwareVersion, signal.networkType, signal.rsrp)
+            .any { !it.isNullOrBlank() }
+        if (!hasData && json.optString("result").equals("failure", ignoreCase = true)) return authRequired(snapshot)
         if (!hasData) return failed(snapshot)
+
+        val capabilities = mutableSetOf(
+            RouterCapability.DEVICE_INFO,
+            RouterCapability.CELLULAR_SIGNAL,
+            RouterCapability.NETWORK_STATUS,
+            RouterCapability.SESSION_COOKIES,
+            RouterCapability.FIRMWARE_INFO,
+            RouterCapability.CA_DETAILS
+        )
+        val model = device.model.orEmpty()
+        val hasActionSeed = json.firstString("wa_inner_version") != null && json.firstString("cr_version") != null && json.firstString("RD") != null
+        if (hasActionSeed && model.isKnownZte5g()) {
+            capabilities += RouterCapability.REBOOT
+            capabilities += RouterCapability.NETWORK_MODE
+        }
+        if (model.contains("MC801A", ignoreCase = true) && device.firmwareVersion.orEmpty().contains("BD_UKH3GMC801AV1.0.0B15", ignoreCase = true)) {
+            capabilities += RouterCapability.BAND_LOCK
+        }
 
         return RouterInspection(
             snapshot = snapshot,
             accessStatus = RouterAccessStatus.AVAILABLE,
             device = device,
             signal = signal.takeIf { it.hasData },
-            capabilities = setOf(
-                RouterCapability.DEVICE_INFO,
-                RouterCapability.CELLULAR_SIGNAL,
-                RouterCapability.NETWORK_STATUS,
-                RouterCapability.SESSION_COOKIES,
-                RouterCapability.FIRMWARE_INFO
-            ),
+            capabilities = capabilities,
+            supportedNetworkModes = if (RouterCapability.NETWORK_MODE in capabilities) {
+                setOf(NetworkMode.AUTO, NetworkMode.LTE_ONLY, NetworkMode.NR_LTE, NetworkMode.NR_ONLY)
+            } else emptySet(),
             message = "تمت قراءة بيانات ZTE مباشرة من الراوتر"
         )
     }
@@ -234,7 +244,6 @@ object HuaweiOperationalAdapter : OperationalRouterAdapter {
     override suspend fun inspect(client: RouterHttpClient, snapshot: RouterSnapshot): RouterInspection {
         val infoResponse = client.get("/api/device/information")
         val signalResponse = client.get("/api/device/signal")
-
         if (requiresHuaweiAuth(infoResponse) && requiresHuaweiAuth(signalResponse)) {
             return RouterInspection(
                 snapshot = snapshot,
@@ -245,38 +254,37 @@ object HuaweiOperationalAdapter : OperationalRouterAdapter {
             )
         }
 
-        val infoXml = infoResponse.body
-        val signalXml = signalResponse.body
+        val modeResponse = runCatching { client.get("/api/net/net-mode") }.getOrNull()
+        val modeListResponse = runCatching { client.get("/api/net/net-mode-list") }.getOrNull()
         val device = RouterDeviceInfo(
             manufacturer = "Huawei",
-            model = xmlValue(infoXml, "DeviceName", "ProductFamily", "Classify") ?: snapshot.model,
-            serialNumber = xmlValue(infoXml, "SerialNumber"),
-            imei = xmlValue(infoXml, "Imei", "IMEI"),
-            firmwareVersion = xmlValue(infoXml, "SoftwareVersion"),
-            hardwareVersion = xmlValue(infoXml, "HardwareVersion"),
-            webUiVersion = xmlValue(infoXml, "WebUIVersion"),
-            wanIp = xmlValue(infoXml, "WanIPAddress", "wan_ip_address")
+            model = xmlValue(infoResponse.body, "DeviceName", "ProductFamily", "Classify") ?: snapshot.model,
+            serialNumber = xmlValue(infoResponse.body, "SerialNumber"),
+            imei = xmlValue(infoResponse.body, "Imei", "IMEI"),
+            firmwareVersion = xmlValue(infoResponse.body, "SoftwareVersion"),
+            hardwareVersion = xmlValue(infoResponse.body, "HardwareVersion"),
+            webUiVersion = xmlValue(infoResponse.body, "WebUIVersion"),
+            wanIp = xmlValue(infoResponse.body, "WanIPAddress", "wan_ip_address")
         )
+        val band = xmlValue(signalResponse.body, "band", "lteband")
         val signal = CellularSignal(
-            networkType = xmlValue(signalXml, "mode", "workmode"),
-            rsrp = xmlValue(signalXml, "rsrp").cleanMetric(),
-            rsrq = xmlValue(signalXml, "rsrq").cleanMetric(),
-            sinr = xmlValue(signalXml, "sinr").cleanMetric(),
-            rssi = xmlValue(signalXml, "rssi").cleanMetric(),
-            bands = bandValues(xmlValue(signalXml, "band")),
-            cellId = xmlValue(signalXml, "cell_id", "cellid"),
-            pci = xmlValue(signalXml, "pci")
+            networkType = xmlValue(signalResponse.body, "mode", "workmode"),
+            networkPreference = modeResponse?.body?.let { xmlValue(it, "NetworkMode") },
+            rsrp = xmlValue(signalResponse.body, "rsrp").cleanMetric(),
+            rsrq = xmlValue(signalResponse.body, "rsrq").cleanMetric(),
+            sinr = xmlValue(signalResponse.body, "sinr").cleanMetric(),
+            rssi = xmlValue(signalResponse.body, "rssi").cleanMetric(),
+            bands = bandValues(band),
+            primaryBand = band,
+            carrierAggregation = xmlValue(signalResponse.body, "dlbandwidth", "ulbandwidth", "sc").isNullOrBlank().not(),
+            cellId = xmlValue(signalResponse.body, "cell_id", "cellid"),
+            pci = xmlValue(signalResponse.body, "pci"),
+            earfcn = xmlValue(signalResponse.body, "earfcn"),
+            nrarfcn = xmlValue(signalResponse.body, "nrarfcn")
         )
 
-        val hasData = listOf(
-            device.model,
-            device.serialNumber,
-            device.imei,
-            device.firmwareVersion,
-            signal.rsrp,
-            signal.sinr
-        ).any { !it.isNullOrBlank() }
-
+        val hasData = listOf(device.model, device.serialNumber, device.imei, device.firmwareVersion, signal.rsrp)
+            .any { !it.isNullOrBlank() }
         if (!hasData) {
             return RouterInspection(
                 snapshot = snapshot,
@@ -286,18 +294,39 @@ object HuaweiOperationalAdapter : OperationalRouterAdapter {
             )
         }
 
+        val capabilities = mutableSetOf(
+            RouterCapability.DEVICE_INFO,
+            RouterCapability.CELLULAR_SIGNAL,
+            RouterCapability.NETWORK_STATUS,
+            RouterCapability.SESSION_COOKIES,
+            RouterCapability.FIRMWARE_INFO,
+            RouterCapability.CA_DETAILS
+        )
+        val tokenProbe = runCatching { client.get("/api/webserver/SesTokInfo") }.getOrNull()
+        if (tokenProbe?.successful == true && xmlValue(tokenProbe.body, "TokInfo") != null) {
+            capabilities += RouterCapability.REBOOT
+        }
+        if (modeResponse?.successful == true && modeListResponse?.successful == true && xmlValue(modeResponse.body, "NetworkMode") != null) {
+            capabilities += RouterCapability.NETWORK_MODE
+        }
+
+        val supportedModes = mutableSetOf<NetworkMode>()
+        if (RouterCapability.NETWORK_MODE in capabilities) {
+            supportedModes += NetworkMode.AUTO
+            supportedModes += NetworkMode.LTE_ONLY
+            val modeList = modeListResponse?.body.orEmpty().lowercase()
+            if ("5g" in modeList || "nr" in modeList) {
+                supportedModes += NetworkMode.NR_LTE
+            }
+        }
+
         return RouterInspection(
             snapshot = snapshot,
             accessStatus = RouterAccessStatus.AVAILABLE,
             device = device,
             signal = signal.takeIf { it.hasData },
-            capabilities = setOf(
-                RouterCapability.DEVICE_INFO,
-                RouterCapability.CELLULAR_SIGNAL,
-                RouterCapability.NETWORK_STATUS,
-                RouterCapability.SESSION_COOKIES,
-                RouterCapability.FIRMWARE_INFO
-            ),
+            capabilities = capabilities,
+            supportedNetworkModes = supportedModes,
             message = "تمت قراءة بيانات Huawei مباشرة من الراوتر"
         )
     }
@@ -314,11 +343,7 @@ private fun JSONObject.firstString(vararg keys: String): String? {
 private fun String?.cleanMetric(): String? = this?.trim()?.takeIf { it.isMeaningful() }
 
 private fun String.isMeaningful(): Boolean =
-    isNotBlank() &&
-        !equals("null", ignoreCase = true) &&
-        !equals("undefined", ignoreCase = true) &&
-        this != "--" &&
-        this != "-"
+    isNotBlank() && !equals("null", ignoreCase = true) && !equals("undefined", ignoreCase = true) && this != "--" && this != "-"
 
 private fun bandValues(vararg raw: String?): List<String> = raw
     .filterNotNull()
@@ -327,17 +352,19 @@ private fun bandValues(vararg raw: String?): List<String> = raw
     .filter { it.isMeaningful() && it != "0" }
     .distinct()
 
-private fun xmlValue(xml: String, vararg tags: String): String? {
+private fun parseZteSecondaryBands(multiCa: String?, simple: String?): List<String> {
+    val parsed = multiCa.orEmpty().trimEnd(';').split(';').mapNotNull { item ->
+        val parts = item.split(',')
+        parts.getOrNull(3)?.takeIf { it.isMeaningful() }?.let { "B$it" }
+    }
+    return if (parsed.isNotEmpty()) parsed.distinct() else bandValues(simple)
+}
+
+internal fun xmlValue(xml: String, vararg tags: String): String? {
     for (tag in tags) {
-        val regex = Regex(
-            "<$tag(?:\\s[^>]*)?>(.*?)</$tag>",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
-        )
+        val regex = Regex("<$tag(?:\\s[^>]*)?>(.*?)</$tag>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         val value = regex.find(xml)?.groupValues?.getOrNull(1)
-            ?.replace("&amp;", "&")
-            ?.replace("&lt;", "<")
-            ?.replace("&gt;", ">")
-            ?.trim()
+            ?.replace("&amp;", "&")?.replace("&lt;", "<")?.replace("&gt;", ">")?.trim()
         if (value?.isMeaningful() == true) return value
     }
     return null
@@ -353,3 +380,6 @@ private fun requiresHuaweiAuth(response: RouterHttpResponse): Boolean {
     val body = response.body.lowercase()
     return "125002" in body || "125003" in body || "100003" in body
 }
+
+private fun String.isKnownZte5g(): Boolean =
+    contains("MC801A", true) || contains("MC888", true) || contains("MC889", true)

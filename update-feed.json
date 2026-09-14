@@ -1,8 +1,12 @@
 {
-  "versionCode": 1,
-  "versionName": "0.1.0",
-  "apkUrl": "",
-  "notes": "الإصدار التأسيسي لـ HAI MANAGER",
+  "versionCode": 3,
+  "versionName": "0.3.0",
+  "apkUrl": "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/HAI-MANAGER.apk",
+  "notes": "تحسين إدارة الراوتر، التحديثات، CA، أوضاع الشبكة والأوامر المتوافقة.",
   "mandatory": false,
+  "signatureStable": false,
+  "sha256": "",
+  "channel": "beta",
+  "publishedAt": "2026-09-14T19:20:00Z",
   "catalogVersion": 1
 }

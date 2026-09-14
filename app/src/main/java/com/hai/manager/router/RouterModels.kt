@@ -27,6 +27,9 @@ enum class RouterCapability(val displayName: String) {
     CELLULAR_SIGNAL("إشارة الشبكة"),
     NETWORK_STATUS("حالة الشبكة"),
     SESSION_COOKIES("جلسة إدارة"),
+    CA_DETAILS("تجميع الترددات CA"),
+    NETWORK_MODE("أوضاع الشبكة"),
+    BAND_LOCK("قفل النطاقات"),
     REBOOT("إعادة التشغيل"),
     WIFI_SETTINGS("إعدادات Wi-Fi"),
     FIRMWARE_INFO("معلومات النظام")
@@ -37,6 +40,13 @@ enum class RouterAccessStatus {
     AUTH_REQUIRED,
     UNSUPPORTED,
     FAILED
+}
+
+enum class NetworkMode(val displayName: String) {
+    AUTO("تلقائي"),
+    LTE_ONLY("4G فقط"),
+    NR_LTE("5G / 4G"),
+    NR_ONLY("5G فقط")
 }
 
 data class RouterDeviceInfo(
@@ -52,17 +62,24 @@ data class RouterDeviceInfo(
 
 data class CellularSignal(
     val networkType: String? = null,
+    val networkPreference: String? = null,
     val operatorName: String? = null,
     val rsrp: String? = null,
     val rsrq: String? = null,
     val sinr: String? = null,
     val rssi: String? = null,
     val bands: List<String> = emptyList(),
+    val primaryBand: String? = null,
+    val secondaryBands: List<String> = emptyList(),
+    val nrBand: String? = null,
+    val carrierAggregation: Boolean = false,
     val cellId: String? = null,
-    val pci: String? = null
+    val pci: String? = null,
+    val earfcn: String? = null,
+    val nrarfcn: String? = null
 ) {
     val hasData: Boolean
-        get() = listOf(networkType, operatorName, rsrp, rsrq, sinr, rssi, cellId, pci)
+        get() = listOf(networkType, networkPreference, operatorName, rsrp, rsrq, sinr, rssi, cellId, pci, earfcn, nrarfcn)
             .any { !it.isNullOrBlank() } || bands.isNotEmpty()
 }
 
@@ -72,7 +89,13 @@ data class RouterInspection(
     val device: RouterDeviceInfo? = null,
     val signal: CellularSignal? = null,
     val capabilities: Set<RouterCapability> = emptySet(),
+    val supportedNetworkModes: Set<NetworkMode> = emptySet(),
     val message: String = ""
+)
+
+data class RouterActionResult(
+    val success: Boolean,
+    val message: String
 )
 
 interface RouterAdapter {

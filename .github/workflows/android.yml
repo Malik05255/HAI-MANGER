@@ -6,9 +6,19 @@ on:
   pull_request:
     branches: ["main"]
 
+permissions:
+  contents: write
+
 concurrency:
   group: android-ci-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  HAI_KEYSTORE_B64: ${{ secrets.HAI_KEYSTORE_B64 }}
+  HAI_KEYSTORE_PASSWORD: ${{ secrets.HAI_KEYSTORE_PASSWORD }}
+  HAI_KEY_ALIAS: ${{ secrets.HAI_KEY_ALIAS }}
+  HAI_KEY_PASSWORD: ${{ secrets.HAI_KEY_PASSWORD }}
+  HAI_KEYSTORE_PATH: ${{ github.workspace }}/.signing/hai-release.jks
 
 jobs:
   build:
@@ -36,14 +46,68 @@ jobs:
         with:
           gradle-version: "9.6.0"
 
+      - name: Restore release signing key
+        if: env.HAI_KEYSTORE_B64 != ''
+        run: |
+          mkdir -p .signing
+          echo "$HAI_KEYSTORE_B64" | base64 --decode > "$HAI_KEYSTORE_PATH"
+          chmod 600 "$HAI_KEYSTORE_PATH"
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
       - name: Run lint
         run: gradle :app:lintDebug --stacktrace
 
-      - name: Upload debug APK
+      - name: Build signed release APK
+        if: env.HAI_KEYSTORE_B64 != ''
+        run: gradle :app:assembleRelease --stacktrace
+
+      - name: Prepare beta release
+        if: github.event_name == 'push'
+        run: |
+          mkdir -p dist
+          SIGNATURE_STABLE=false
+          SOURCE_APK="app/build/outputs/apk/debug/app-debug.apk"
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            SOURCE_APK="app/build/outputs/apk/release/app-release.apk"
+            SIGNATURE_STABLE=true
+          fi
+          cp "$SOURCE_APK" dist/HAI-MANAGER.apk
+          VERSION_CODE=$(grep -m1 'versionCode = ' app/build.gradle.kts | sed -E 's/.*versionCode = ([0-9]+).*/\1/')
+          VERSION_NAME=$(grep -m1 'versionName = ' app/build.gradle.kts | sed -E 's/.*versionName = "([^"]+)".*/\1/')
+          SHA256=$(sha256sum dist/HAI-MANAGER.apk | awk '{print $1}')
+          PUBLISHED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          cat > dist/update-feed.json <<EOF
+          {
+            "versionCode": $VERSION_CODE,
+            "versionName": "$VERSION_NAME",
+            "apkUrl": "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/HAI-MANAGER.apk",
+            "notes": "تحسين إدارة الراوتر، التحديثات، CA، أوضاع الشبكة والأوامر المتوافقة.",
+            "mandatory": false,
+            "signatureStable": $SIGNATURE_STABLE,
+            "sha256": "$SHA256",
+            "channel": "beta",
+            "publishedAt": "$PUBLISHED_AT"
+          }
+          EOF
+
+      - name: Publish beta release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete beta --yes || true
+          git tag -f beta "$GITHUB_SHA"
+          git push origin refs/tags/beta --force
+          gh release create beta dist/HAI-MANAGER.apk dist/update-feed.json \
+            --title "HAI MANAGER Beta" \
+            --prerelease \
+            --notes "Automated beta build from $GITHUB_SHA"
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HAI-MANAGER-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: HAI-MANAGER-beta
+          path: dist/HAI-MANAGER.apk
+          if-no-files-found: error
