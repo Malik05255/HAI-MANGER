@@ -41,32 +41,33 @@ object RouterWriteSafety {
     private fun requiredProbeIds(
         inspection: RouterInspection,
         operation: RouterWriteOperation
-    ): Set<String> = when (operation) {
-        RouterWriteOperation.REBOOT -> when (inspection.snapshot.brand) {
-            RouterBrand.ZTE -> setOf("zte_action_seed")
-            RouterBrand.HUAWEI -> setOf("huawei_session_token")
-            else -> emptySet()
-        }
+    ): Set<String> {
+        val profileSpecific = inspection.firmwareProfileInfo.actionProbes[operation].orEmpty()
+        if (profileSpecific.isNotEmpty()) return profileSpecific
 
-        RouterWriteOperation.NETWORK_MODE -> when (inspection.snapshot.brand) {
-            RouterBrand.ZTE -> setOf("zte_action_seed", "network_mode_read")
-            RouterBrand.HUAWEI -> setOf("huawei_session_token", "network_mode_read", "band_selection_read")
-            else -> emptySet()
-        }
-
-        RouterWriteOperation.BAND_LOCK -> when (inspection.snapshot.brand) {
-            RouterBrand.ZTE -> inspection.firmwareProfileInfo.requiredProbes.ifEmpty {
-                setOf("zte_action_seed", "nr_band_state")
+        return when (operation) {
+            RouterWriteOperation.REBOOT -> when (inspection.snapshot.brand) {
+                RouterBrand.ZTE -> setOf("zte_action_seed")
+                RouterBrand.HUAWEI -> setOf("huawei_session_token")
+                else -> emptySet()
             }
-            RouterBrand.HUAWEI -> inspection.firmwareProfileInfo.requiredProbes.ifEmpty {
-                setOf("huawei_session_token", "network_mode_read", "band_selection_read")
-            }
-            else -> emptySet()
-        }
 
-        RouterWriteOperation.NCK_ENTRY -> when (inspection.snapshot.brand) {
-            RouterBrand.ZTE, RouterBrand.HUAWEI -> setOf("network_lock_read", "nck_write")
-            else -> emptySet()
+            RouterWriteOperation.NETWORK_MODE -> when (inspection.snapshot.brand) {
+                RouterBrand.ZTE -> setOf("zte_action_seed", "network_mode_read")
+                RouterBrand.HUAWEI -> setOf("huawei_session_token", "network_mode_read", "band_selection_read")
+                else -> emptySet()
+            }
+
+            RouterWriteOperation.BAND_LOCK -> when (inspection.snapshot.brand) {
+                RouterBrand.ZTE -> setOf("zte_action_seed", "network_mode_read", "nr_band_state")
+                RouterBrand.HUAWEI -> setOf("huawei_session_token", "network_mode_read", "band_selection_read")
+                else -> emptySet()
+            }
+
+            RouterWriteOperation.NCK_ENTRY -> when (inspection.snapshot.brand) {
+                RouterBrand.ZTE, RouterBrand.HUAWEI -> setOf("network_lock_read", "nck_write")
+                else -> emptySet()
+            }
         }
     }
 }
