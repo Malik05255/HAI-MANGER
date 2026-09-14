@@ -3,10 +3,15 @@ package com.hai.manager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -14,16 +19,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import com.hai.manager.catalog.DeviceCatalogRepository
+import com.hai.manager.router.FirmwareCandidate
+import com.hai.manager.router.FirmwareSearchSource
 import com.hai.manager.router.RouterCapabilityProbeService
 import com.hai.manager.router.RouterDiscoveryService
 import com.hai.manager.router.RouterFirmwareService
-import com.hai.manager.router.RouterFirmwareStatus
 import com.hai.manager.router.RouterInspection
 import com.hai.manager.router.RouterInspectorService
 import kotlinx.coroutines.launch
@@ -49,110 +59,218 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
     val inspector = remember { RouterInspectorService() }
     val capabilityProbe = remember { RouterCapabilityProbeService() }
     val firmware = remember { RouterFirmwareService() }
+    val catalog = remember { DeviceCatalogRepository(context.applicationContext) }
 
     var loading by remember { mutableStateOf(true) }
-    var installing by remember { mutableStateOf(false) }
     var inspection by remember { mutableStateOf<RouterInspection?>(null) }
-    var status by remember { mutableStateOf<RouterFirmwareStatus?>(null) }
+    var selectedSource by remember { mutableStateOf(FirmwareSearchSource.OFFICIAL) }
+    var candidate by remember { mutableStateOf<FirmwareCandidate?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
+
+    var searching by remember { mutableStateOf(false) }
+    var searchProgress by remember { mutableIntStateOf(0) }
+    var searchStage by remember { mutableStateOf("") }
+
+    var installing by remember { mutableStateOf(false) }
+    var installProgress by remember { mutableIntStateOf(0) }
+    var installStage by remember { mutableStateOf("") }
     var confirmInstall by remember { mutableStateOf(false) }
 
-    suspend fun refresh() {
+    suspend fun loadRouter() {
         loading = true
         message = null
         val found = discovery.discover()
-        val current = if (found.connected && found.managementUrl != null) {
+        inspection = if (found.connected && found.managementUrl != null) {
             runCatching { capabilityProbe.enrich(inspector.inspect(found)) }.getOrNull()
         } else null
-        inspection = current
-        status = current?.let { runCatching { firmware.check(it) }.getOrNull() }
         loading = false
     }
 
-    LaunchedEffect(Unit) { refresh() }
+    fun searchUpdates() {
+        val current = inspection ?: return
+        scope.launch {
+            searching = true
+            candidate = null
+            message = null
+            searchProgress = 0
+            searchStage = "بدء البحث"
+
+            val catalogJson = if (selectedSource == FirmwareSearchSource.COMPANIES) {
+                searchStage = "تحديث قاعدة التوافق"
+                searchProgress = 5
+                catalog.sync()
+                catalog.cachedJson()
+            } else {
+                catalog.cachedJson()
+            }
+
+            val result = firmware.search(current, selectedSource, catalogJson) { progress, stage ->
+                searchProgress = maxOf(searchProgress, progress.coerceIn(0, 100))
+                searchStage = stage
+            }
+            candidate = result.candidate
+            message = result.message
+            searching = false
+        }
+    }
+
+    fun executeUpdate() {
+        val current = inspection ?: return
+        val update = candidate ?: return
+        scope.launch {
+            installing = true
+            message = null
+            installProgress = 0
+            installStage = "بدء التحقق"
+            val result = firmware.execute(current, update) { progress, stage ->
+                installProgress = maxOf(installProgress, progress.coerceIn(0, 100))
+                installStage = stage
+            }
+            message = result.message
+            installing = false
+        }
+    }
+
+    LaunchedEffect(Unit) { loadRouter() }
 
     if (confirmInstall) {
         AlertDialog(
-            onDismissRequest = { confirmInstall = false },
-            title = { Text("تحديث نظام الراوتر؟") },
-            text = { Text("لا تفصل الكهرباء أو الإنترنت عن الراوتر حتى يكتمل التحديث ويعيد التشغيل.") },
+            onDismissRequest = { if (!installing) confirmInstall = false },
+            title = { Text("تنفيذ التحديث؟") },
+            text = { Text("سيتم التحقق من التوافق أولًا ثم يبدأ التحديث. لا تفصل الكهرباء عن الراوتر.") },
             confirmButton = {
                 TextButton(onClick = {
                     confirmInstall = false
-                    val current = inspection ?: return@TextButton
-                    val currentStatus = status ?: return@TextButton
-                    scope.launch {
-                        installing = true
-                        val result = firmware.install(current, currentStatus)
-                        message = result.message
-                        installing = false
-                        if (result.success) {
-                            kotlinx.coroutines.delay(1200)
-                            status = runCatching { firmware.check(current) }.getOrNull() ?: status
-                        }
-                    }
-                }) { Text("بدء التحديث") }
+                    executeUpdate()
+                }) { Text("تنفيذ") }
             },
-            dismissButton = { TextButton(onClick = { confirmInstall = false }) { Text("إلغاء") } }
+            dismissButton = {
+                TextButton(onClick = { confirmInstall = false }) { Text("إلغاء") }
+            }
         )
     }
 
-    HaiPage(title = "نظام الراوتر") {
+    HaiPage(title = "تحديث نظام الراوتر") {
         when {
             loading -> HaiCard { CircularProgressIndicator() }
             inspection == null -> HaiCard {
                 Text("تعذر العثور على الراوتر")
-                Button(onClick = { scope.launch { refresh() } }, modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = { scope.launch { loadRouter() } }, modifier = Modifier.fillMaxWidth()) {
                     Text("إعادة المحاولة")
-                }
-            }
-            status == null -> HaiCard {
-                Text("تعذر قراءة خدمة التحديث")
-                Button(onClick = { scope.launch { refresh() } }, modifier = Modifier.fillMaxWidth()) {
-                    Text("إعادة الفحص")
                 }
             }
             else -> {
                 val current = inspection!!
-                val update = status!!
 
                 HaiCard {
-                    HaiSectionTitle(current.device?.model ?: current.snapshot.brand.displayName)
-                    HaiValueRow("الحالي", update.currentVersion)
-                    HaiValueRow("الجديد", update.availableVersion)
-                    HaiValueRow("الحجم", update.componentSize)
-                    HaiValueRow("المصدر", update.source)
-                    HaiStatusChip(update.state, active = update.updateAvailable || update.progressPercent != null)
-                    update.progressPercent?.let { HaiValueRow("التقدم", "$it%") }
+                    HaiSectionTitle("النظام الحالي")
+                    HaiValueRow("الراوتر", current.device?.model ?: current.snapshot.brand.displayName)
+                    HaiValueRow("Firmware", current.device?.firmwareVersion)
+                    HaiValueRow("Hardware", current.device?.hardwareVersion)
                 }
 
-                if (update.updateAvailable && update.canInstall) {
+                HaiCard {
+                    HaiSectionTitle("مصدر التحديث")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FirmwareSearchSource.entries.forEach { source ->
+                            if (selectedSource == source) {
+                                Button(
+                                    onClick = {
+                                        if (!searching && !installing) {
+                                            selectedSource = source
+                                            candidate = null
+                                            message = null
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                ) { Text(source.displayName) }
+                            } else {
+                                OutlinedButton(
+                                    onClick = {
+                                        if (!searching && !installing) {
+                                            selectedSource = source
+                                            candidate = null
+                                            message = null
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                ) { Text(source.displayName) }
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = ::searchUpdates,
+                        enabled = !searching && !installing,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
+                    ) { Text("جلب التحديث") }
+                }
+
+                if (searching) {
+                    ProgressCard(
+                        title = "البحث عن تحديث",
+                        progress = searchProgress,
+                        stage = searchStage
+                    )
+                }
+
+                candidate?.let { update ->
+                    HaiCard {
+                        HaiSectionTitle("التحديث المتاح")
+                        Text(
+                            update.version,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        HaiValueRow("المصدر", update.sourceLabel)
+                        HaiValueRow("الحجم", update.size)
+                        Text(update.summaryArabic)
+                        HaiStatusChip(
+                            if (update.installable) "جاهز للتنفيذ" else "التثبيت غير متاح بعد",
+                            active = update.installable
+                        )
+                    }
+
                     Button(
                         onClick = { confirmInstall = true },
-                        enabled = !installing,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        if (installing) CircularProgressIndicator()
-                        else Text("تحديث الراوتر الآن")
-                    }
-                } else if (update.updateAvailable) {
-                    HaiCard {
-                        Text("تم العثور على تحديث، لكن التثبيت المباشر غير مفعّل لهذا Firmware بعد.")
-                    }
+                        enabled = update.installable && !searching && !installing,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                    ) { Text("تنفيذ التحديث") }
                 }
 
-                message?.let { Text(it) }
+                if (installing) {
+                    ProgressCard(
+                        title = "تحديث الراوتر",
+                        progress = installProgress,
+                        stage = installStage
+                    )
+                }
 
-                OutlinedButton(
-                    onClick = { scope.launch { refresh() } },
-                    enabled = !installing,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("البحث عن تحديث") }
+                message?.let {
+                    HaiCard { Text(it) }
+                }
             }
         }
 
-        OutlinedButton(onClick = onClose, enabled = !installing, modifier = Modifier.fillMaxWidth()) {
-            Text("رجوع")
-        }
+        OutlinedButton(
+            onClick = onClose,
+            enabled = !installing,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("رجوع") }
+    }
+}
+
+@Composable
+private fun ProgressCard(title: String, progress: Int, stage: String) {
+    HaiCard {
+        HaiSectionTitle(title)
+        Text("$progress%", fontWeight = FontWeight.Bold)
+        LinearProgressIndicator(
+            progress = { progress.coerceIn(0, 100) / 100f },
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (stage.isNotBlank()) Text(stage)
     }
 }
