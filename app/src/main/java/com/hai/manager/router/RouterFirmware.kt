@@ -45,8 +45,7 @@ class RouterFirmwareService {
     ): FirmwareSearchResult {
         onProgress(0, "بدء البحث")
         onProgress(8, "قراءة بيانات الراوتر")
-        val device = inspection.device
-            ?: return FirmwareSearchResult(message = "تعذر قراءة بيانات الراوتر")
+        inspection.device ?: return FirmwareSearchResult(message = "تعذر قراءة بيانات الراوتر")
         delay(120)
 
         onProgress(18, "مطابقة الموديل والـFirmware")
@@ -86,6 +85,11 @@ class RouterFirmwareService {
         val device = inspection.device
             ?: return FirmwareCompatibility(false, "تعذر قراءة هوية الراوتر")
 
+        val actualCurrent = device.firmwareVersion.orEmpty()
+        if (candidate.version.isNotBlank() && candidate.version.equals(actualCurrent, ignoreCase = true)) {
+            return FirmwareCompatibility(false, "هذا الإصدار مثبت على الراوتر بالفعل")
+        }
+
         onProgress(10, "التحقق من الشركة")
         if (!candidate.brand.equals(inspection.snapshot.brand.displayName, true)) {
             return FirmwareCompatibility(false, "التحديث لا يطابق شركة الراوتر")
@@ -109,8 +113,7 @@ class RouterFirmwareService {
 
         onProgress(34, "التحقق من الإصدار الحالي")
         candidate.requiredCurrentFirmware?.takeIf { it.isNotBlank() }?.let { expected ->
-            val actual = device.firmwareVersion.orEmpty()
-            if (actual.isBlank() || !actual.contains(expected, true)) {
+            if (actualCurrent.isBlank() || !actualCurrent.contains(expected, true)) {
                 return FirmwareCompatibility(false, "الإصدار الحالي ليس ضمن المسار المسموح لهذا التحديث")
             }
         }
@@ -186,7 +189,7 @@ class RouterFirmwareService {
                 size = firmwareComponent.size,
                 source = FirmwareSearchSource.OFFICIAL,
                 sourceLabel = "Huawei OTA",
-                summaryArabic = "تحديث رسمي من Huawei مطابق للراوتر. سيتم التحقق من الموديل وHardware والإصدار مرة أخرى قبل التنفيذ.",
+                summaryArabic = "تحديث رسمي من Huawei مطابق للراوتر. سيتحقق التطبيق من الموديل وHardware والإصدار مرة أخرى قبل التنفيذ.",
                 installable = list?.successful == true,
                 installMode = "huawei_ota",
                 brand = "Huawei",
@@ -232,7 +235,7 @@ class RouterFirmwareService {
                 version = version ?: "إصدار جديد",
                 source = FirmwareSearchSource.OFFICIAL,
                 sourceLabel = "ZTE OTA",
-                summaryArabic = "تحديث رسمي رصده الراوتر من خدمة ZTE. التثبيت المباشر سيبقى محجوبًا حتى يكون أمر OTA موثقًا لهذا Firmware.",
+                summaryArabic = "تحديث رسمي رصده الراوتر من خدمة ZTE. التثبيت المباشر محجوب حتى يكون أمر OTA موثقًا لهذا Firmware.",
                 installable = false,
                 installMode = "zte_ota_unverified",
                 brand = "ZTE",
@@ -276,7 +279,7 @@ class RouterFirmwareService {
             val verified = item.optBoolean("verified", false)
             val installable = verified && when (installMode.lowercase()) {
                 "huawei_ota" -> true
-                "direct_package" -> !url.isNullOrBlank() && !sha256.isNullOrBlank() && false // package flashing stays disabled until a signed adapter exists
+                "direct_package" -> false // Requires a signed model-specific flashing adapter before enabling.
                 else -> false
             }
 
@@ -326,7 +329,8 @@ class RouterFirmwareService {
 
         onProgress(52, "بدأ التحديث")
         var lastReported = 52
-        repeat(90) {
+        var packageComplete = false
+        for (attempt in 0 until 90) {
             delay(2000)
             val status = runCatching { client.get("/api/online-update/status") }.getOrNull()
             val raw = status?.body?.let { body -> xmlValue(body, "DownloadProgress") }?.toIntOrNull()
@@ -338,15 +342,20 @@ class RouterFirmwareService {
                     onProgress(mapped, if (raw < 100) "تنزيل النظام $raw%" else "تجهيز التثبيت")
                 }
             }
-            if (componentState == "100") {
+            if (componentState == "100" || raw == 100) {
+                packageComplete = true
                 lastReported = maxOf(lastReported, 94)
                 onProgress(lastReported, "إعادة تشغيل الراوتر")
-                return@repeat
+                break
             }
         }
 
+        if (!packageComplete && lastReported < 70) {
+            return RouterActionResult(false, "بدأ الراوتر التحديث لكن لم تصل حالة تنزيل موثوقة. أعد الفحص قبل أي محاولة أخرى")
+        }
+
         onProgress(maxOf(lastReported, 94), "بانتظار عودة الراوتر")
-        repeat(75) {
+        for (attempt in 0 until 75) {
             delay(2000)
             val info = runCatching { client.get("/api/device/information") }.getOrNull()
             val version = info?.body?.let { body -> xmlValue(body, "SoftwareVersion") }
