@@ -111,6 +111,7 @@ jobs:
           cp "$SOURCE_APK" dist/HAI-MANAGER.apk
           VERSION_CODE=$(grep -m1 'versionCode = ' app/build.gradle.kts | sed -E 's/.*versionCode = ([0-9]+).*/\1/')
           VERSION_NAME=$(grep -m1 'versionName = ' app/build.gradle.kts | sed -E 's/.*versionName = "([^"]+)".*/\1/')
+          CATALOG_VERSION=$(grep -m1 '"catalogVersion"' device-catalog.json | sed -E 's/.*: *([0-9]+).*/\1/')
           SHA256=$(sha256sum dist/HAI-MANAGER.apk | awk '{print toupper($1)}')
           PUBLISHED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
           cat > dist/update-feed.json <<EOF
@@ -118,14 +119,14 @@ jobs:
             "versionCode": $VERSION_CODE,
             "versionName": "$VERSION_NAME",
             "apkUrl": "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/HAI-MANAGER.apk",
-            "notes": "إصلاح سلسلة التوقيع الدائمة وتحديثات HAI MANAGER الآمنة.",
+            "notes": "تحسين موثوقية أوامر الراوتر، دعم تشخيص Netgear Nighthawk وحالة Firmware الرسمية، وتحسين مزامنة قاعدة الأجهزة.",
             "mandatory": false,
             "signatureStable": true,
             "signingCertSha256": "$EXPECTED_SIGNING_CERT_SHA256",
             "sha256": "$SHA256",
             "channel": "beta",
             "publishedAt": "$PUBLISHED_AT",
-            "catalogVersion": 2
+            "catalogVersion": $CATALOG_VERSION
           }
           EOF
 
@@ -134,13 +135,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          VERSION_NAME=$(grep -m1 'versionName = ' app/build.gradle.kts | sed -E 's/.*versionName = "([^"]+)".*/\1/')
           gh release delete beta --yes || true
           git tag -f beta "$GITHUB_SHA"
           git push origin refs/tags/beta --force
           gh release create beta dist/HAI-MANAGER.apk dist/update-feed.json \
-            --title "HAI MANAGER Beta" \
+            --title "HAI MANAGER Beta $VERSION_NAME" \
             --prerelease \
-            --notes "Signed automated beta build from $GITHUB_SHA"
+            --notes "HAI MANAGER $VERSION_NAME — signed automated beta build from $GITHUB_SHA"
 
       - name: Publish legacy update feed for old clients
         if: github.event_name != 'pull_request' && env.HAI_KEYSTORE_B64 != '' && env.HAI_KEYSTORE_PASSWORD != ''

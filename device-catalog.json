@@ -1,5 +1,5 @@
 {
-  "catalogVersion": 4,
+  "catalogVersion": 5,
   "updatedAt": "2026-09-14",
   "devices": [
     {"brand":"ZTE","model":"MC888","aliases":["MC888"],"discovery":true,"firmware":"official_only","networkUnlock":"adapter_required"},
@@ -51,8 +51,8 @@
       "brand": "Netgear",
       "family": "Nighthawk M5/M6/M7",
       "verification": "model_json_after_webui_login",
-      "actions": ["read_device_info", "read_signal", "read_ca", "read_band", "read_cell"],
-      "notes": "قراءة تشخيصية فقط عبر model.json بعد تسجيل الدخول. لا توجد أوامر تغيير مفعلة حتى توثيق واجهة الكتابة لكل Firmware."
+      "actions": ["read_device_info", "read_signal", "read_ca", "read_band", "read_cell", "read_official_firmware_update_state"],
+      "notes": "قراءة تشخيصية فقط عبر model.json بعد تسجيل الدخول، بما فيها حالة FOTA عند توفرها. لا توجد أوامر تغيير أو تثبيت Firmware مفعلة حتى توثيق واجهة الكتابة لكل Firmware."
     }
   ]
 }

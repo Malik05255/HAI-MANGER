@@ -339,7 +339,8 @@ object NetgearOperationalAdapter : OperationalRouterAdapter {
 
     override suspend fun inspect(client: RouterHttpClient, snapshot: RouterSnapshot): RouterInspection {
         val response = client.get("/model.json")
-        if (response.code == 401 || response.code == 403 || looksLikeLogin(response.body)) {
+        val json = runCatching { JSONObject(response.body) }.getOrNull()
+        if (response.code == 401 || response.code == 403 || (json == null && looksLikeLogin(response.body))) {
             return RouterInspection(
                 snapshot = snapshot,
                 accessStatus = RouterAccessStatus.AUTH_REQUIRED,
@@ -349,13 +350,14 @@ object NetgearOperationalAdapter : OperationalRouterAdapter {
             )
         }
 
-        val json = runCatching { JSONObject(response.body) }.getOrNull()
-            ?: return RouterInspection(
+        if (json == null) {
+            return RouterInspection(
                 snapshot = snapshot,
                 accessStatus = RouterAccessStatus.FAILED,
                 device = RouterDeviceInfo(manufacturer = "NETGEAR", model = snapshot.model),
                 message = "تم العثور على Netgear لكن model.json لم يُقرأ بصيغة JSON"
             )
+        }
 
         val model = json.pathString("general.deviceName", "device.deviceName", "deviceName") ?: snapshot.model
         val firmware = json.pathString(
@@ -412,6 +414,19 @@ object NetgearOperationalAdapter : OperationalRouterAdapter {
             )
         }
 
+        val fotaAvailable = json.pathString("fota.fwupdater.available", "fota.available")
+        val fotaState = json.pathString("fota.fwupdater.state", "fota.state")
+        val fotaDescription = json.pathString("fota.fwupdater.description", "fota.description")
+        val updateAvailable = fotaAvailable?.trim()?.lowercase() in setOf("1", "true", "yes", "available")
+        val firmwareStatus = when {
+            updateAvailable -> buildString {
+                append(" • يوجد تحديث Firmware رسمي متاح")
+                if (!fotaDescription.isNullOrBlank()) append(": ").append(fotaDescription)
+            }
+            !fotaState.isNullOrBlank() -> " • حالة تحديث Firmware: $fotaState"
+            else -> ""
+        }
+
         return RouterInspection(
             snapshot = snapshot,
             accessStatus = RouterAccessStatus.AVAILABLE,
@@ -425,7 +440,7 @@ object NetgearOperationalAdapter : OperationalRouterAdapter {
                 RouterCapability.FIRMWARE_INFO,
                 RouterCapability.CA_DETAILS
             ),
-            message = "تمت قراءة تشخيص Netgear Nighthawk من model.json — وضع القراءة فقط"
+            message = "تمت قراءة تشخيص Netgear Nighthawk من model.json — وضع القراءة فقط$firmwareStatus"
         )
     }
 }
