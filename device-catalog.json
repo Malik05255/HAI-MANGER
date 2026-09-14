@@ -1,5 +1,5 @@
 {
-  "catalogVersion": 11,
+  "catalogVersion": 12,
   "updatedAt": "2026-09-15",
   "focus": ["ZTE", "Huawei"],
   "diagnosticsVersion": 2,
@@ -87,6 +87,14 @@
       "notes":"تستخدم واجهات HiLink للأوامر المثبتة فقط. Band Lock وNCK يحتاجان Profile Firmware موثق قبل تفعيل الكتابة."
     }
   ],
+  "firmwareUpdates": [],
+  "firmwareUpdatePolicy": {
+    "companyCatalog":"Only verified Huawei/ZTE carrier or vendor packages may be listed.",
+    "requiredFields":["brand","modelContains","version","company","installMode","verified"],
+    "directPackageRequires":["https_url","sha256","hardware_match","current_firmware_match","signed_install_adapter"],
+    "remoteCatalogCanForceInstall": false,
+    "compatibilityGate":"brand + model + hardware + current firmware + install adapter + integrity verification"
+  },
   "probeMatrix": {
     "ZTE": ["zte_action_seed","network_mode_read","nr_band_state","network_lock_read","wifi_read","nck_write"],
     "Huawei": ["huawei_session_token","network_mode_read","band_selection_read","mode_list","sim_security","wifi_read","network_lock_read","nck_write"]
