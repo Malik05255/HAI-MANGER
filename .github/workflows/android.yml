@@ -17,10 +17,8 @@ concurrency:
 env:
   HAI_KEYSTORE_B64: ${{ secrets.HAI_KEYSTORE_B64 }}
   HAI_KEYSTORE_PASSWORD: ${{ secrets.HAI_KEYSTORE_PASSWORD }}
-  HAI_KEY_ALIAS: ${{ secrets.HAI_KEY_ALIAS }}
-  HAI_KEY_PASSWORD: ${{ secrets.HAI_KEY_PASSWORD }}
   HAI_KEYSTORE_PATH: ${{ github.workspace }}/.signing/hai-release.jks
-  EXPECTED_SIGNING_CERT_SHA256: BE6D46C373883309CA8E5EA8DDC11CE02339352C4D690EF74387CEA8275E7DF2
+  EXPECTED_SIGNING_CERT_SHA256: D59B0F985ED8CF4A903938B7904A5F33EDA01E8817E994B6A20D78D164BC2441
 
 jobs:
   build:
@@ -49,11 +47,36 @@ jobs:
           gradle-version: "9.6.0"
 
       - name: Restore release signing key
-        if: env.HAI_KEYSTORE_B64 != ''
+        if: env.HAI_KEYSTORE_B64 != '' && env.HAI_KEYSTORE_PASSWORD != ''
         run: |
           mkdir -p .signing
-          echo "$HAI_KEYSTORE_B64" | base64 --decode > "$HAI_KEYSTORE_PATH"
+          printf '%s' "$HAI_KEYSTORE_B64" | base64 --decode > "$HAI_KEYSTORE_PATH"
           chmod 600 "$HAI_KEYSTORE_PATH"
+
+      - name: Validate release signing key
+        if: env.HAI_KEYSTORE_B64 != '' && env.HAI_KEYSTORE_PASSWORD != ''
+        run: |
+          KEYSTORE_CERT=$(keytool -list -v \
+            -keystore "$HAI_KEYSTORE_PATH" \
+            -storepass "$HAI_KEYSTORE_PASSWORD" \
+            -alias hai_manager \
+            | sed -n 's/^[[:space:]]*SHA256: //p' \
+            | head -n1 \
+            | tr -d ':' \
+            | tr '[:lower:]' '[:upper:]')
+          echo "Keystore certificate: $KEYSTORE_CERT"
+          test "$KEYSTORE_CERT" = "$EXPECTED_SIGNING_CERT_SHA256"
+
+          mkdir -p .signing/check
+          echo ok > .signing/check/payload.txt
+          (cd .signing/check && zip -q check.jar payload.txt)
+          jarsigner \
+            -keystore "$HAI_KEYSTORE_PATH" \
+            -storepass "$HAI_KEYSTORE_PASSWORD" \
+            -keypass "$HAI_KEYSTORE_PASSWORD" \
+            .signing/check/check.jar hai_manager >/dev/null
+          jarsigner -verify .signing/check/check.jar >/dev/null
+          rm -rf .signing/check
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
@@ -62,11 +85,11 @@ jobs:
         run: gradle :app:lintDebug --stacktrace
 
       - name: Build signed release APK
-        if: env.HAI_KEYSTORE_B64 != ''
+        if: env.HAI_KEYSTORE_B64 != '' && env.HAI_KEYSTORE_PASSWORD != ''
         run: gradle :app:assembleRelease --stacktrace
 
       - name: Verify release signing certificate
-        if: env.HAI_KEYSTORE_B64 != ''
+        if: env.HAI_KEYSTORE_B64 != '' && env.HAI_KEYSTORE_PASSWORD != ''
         run: |
           APK="app/build/outputs/apk/release/app-release.apk"
           CERT_SHA256=$("$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$APK" \
@@ -78,7 +101,7 @@ jobs:
           test "$CERT_SHA256" = "$EXPECTED_SIGNING_CERT_SHA256"
 
       - name: Prepare signed update release
-        if: github.event_name != 'pull_request' && env.HAI_KEYSTORE_B64 != ''
+        if: github.event_name != 'pull_request' && env.HAI_KEYSTORE_B64 != '' && env.HAI_KEYSTORE_PASSWORD != ''
         run: |
           mkdir -p dist
           SOURCE_APK="app/build/outputs/apk/release/app-release.apk"
@@ -92,7 +115,7 @@ jobs:
             "versionCode": $VERSION_CODE,
             "versionName": "$VERSION_NAME",
             "apkUrl": "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/HAI-MANAGER.apk",
-            "notes": "تحديث موقع بمفتاح HAI MANAGER الثابت، مع تحسينات التحديثات وإدارة الراوتر.",
+            "notes": "إصلاح سلسلة التوقيع الدائمة وتحديثات HAI MANAGER الآمنة.",
             "mandatory": false,
             "signatureStable": true,
             "signingCertSha256": "$EXPECTED_SIGNING_CERT_SHA256",
@@ -104,7 +127,7 @@ jobs:
           EOF
 
       - name: Publish signed beta release
-        if: github.event_name != 'pull_request' && env.HAI_KEYSTORE_B64 != ''
+        if: github.event_name != 'pull_request' && env.HAI_KEYSTORE_B64 != '' && env.HAI_KEYSTORE_PASSWORD != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -117,7 +140,7 @@ jobs:
             --notes "Signed automated beta build from $GITHUB_SHA"
 
       - name: Publish legacy update feed for old clients
-        if: github.event_name != 'pull_request' && env.HAI_KEYSTORE_B64 != ''
+        if: github.event_name != 'pull_request' && env.HAI_KEYSTORE_B64 != '' && env.HAI_KEYSTORE_PASSWORD != ''
         run: |
           cp dist/update-feed.json update-feed.json
           git config user.name "github-actions[bot]"
@@ -129,7 +152,7 @@ jobs:
           fi
 
       - name: Warn when release signing is not configured
-        if: github.event_name != 'pull_request' && env.HAI_KEYSTORE_B64 == ''
+        if: github.event_name != 'pull_request' && (env.HAI_KEYSTORE_B64 == '' || env.HAI_KEYSTORE_PASSWORD == '')
         run: |
           echo "::warning::Release signing secrets are missing. Debug APK is built for testing only; no installable update is published."
 
@@ -141,7 +164,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload signed release APK artifact
-        if: env.HAI_KEYSTORE_B64 != ''
+        if: env.HAI_KEYSTORE_B64 != '' && env.HAI_KEYSTORE_PASSWORD != ''
         uses: actions/upload-artifact@v4
         with:
           name: HAI-MANAGER-signed-release

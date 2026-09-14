@@ -13,18 +13,19 @@ android {
         applicationId = "com.hai.manager"
         minSdk = 26
         targetSdk = 37
-        versionCode = 5
-        versionName = "0.3.2"
+        versionCode = 6
+        versionName = "0.3.3"
     }
 
     val releaseKeystore = System.getenv("HAI_KEYSTORE_PATH")
-    if (!releaseKeystore.isNullOrBlank()) {
+    val releasePassword = System.getenv("HAI_KEYSTORE_PASSWORD")
+    if (!releaseKeystore.isNullOrBlank() && !releasePassword.isNullOrBlank()) {
         signingConfigs {
             create("release") {
                 storeFile = file(releaseKeystore)
-                storePassword = System.getenv("HAI_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("HAI_KEY_ALIAS")
-                keyPassword = System.getenv("HAI_KEY_PASSWORD")
+                storePassword = releasePassword
+                keyAlias = "hai_manager"
+                keyPassword = releasePassword
             }
         }
     }
