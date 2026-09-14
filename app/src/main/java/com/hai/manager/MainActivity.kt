@@ -64,11 +64,13 @@ import com.hai.manager.router.RouterActionService
 import com.hai.manager.router.RouterBrand
 import com.hai.manager.router.RouterCapability
 import com.hai.manager.router.RouterCapabilityProbeService
+import com.hai.manager.router.RouterDiagnosticsReport
 import com.hai.manager.router.RouterDiscoveryService
 import com.hai.manager.router.RouterInspection
 import com.hai.manager.router.RouterInspectorService
 import com.hai.manager.router.RouterSnapshot
 import com.hai.manager.router.firmwareProfileInfo
+import com.hai.manager.router.profileProbeReadiness
 import com.hai.manager.update.ApkUpdateInstaller
 import com.hai.manager.update.AppUpdate
 import com.hai.manager.update.UpdateCheckResult
@@ -261,44 +263,65 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
 
         inspection?.let { current ->
             val profile = current.firmwareProfileInfo
+            val readiness = current.profileProbeReadiness
             SimpleCard("Firmware Profile") {
                 DetailRow("Profile", profile.profileId)
                 DetailRow("التحقق", profile.verification.displayName)
                 DetailRow("Band Lock", profile.bandLock.displayName)
                 DetailRow("Network Lock / NCK", profile.nckEntry.displayName)
+                DetailRow("جاهزية شروط الكتابة", if (readiness.ready) "مكتملة" else "محجوبة")
+                if (readiness.missing.isNotEmpty()) {
+                    Text("Probes الناقصة: ${readiness.missing.sorted().joinToString(", ")}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f), fontSize = 12.sp)
+                }
                 Text(profile.notes, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
             }
         }
 
-        inspection?.probeReport?.let { report ->
-            SimpleCard("Capability Probe") {
-                DetailRow("Firmware Fingerprint", report.firmwareFingerprint)
-                DetailRow("الملخص", report.summary)
-                report.items.forEach { item ->
-                    DetailRow(item.label, item.status.displayName)
-                    item.detail?.let { detail ->
-                        Text(detail, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 12.sp)
+        inspection?.let { current ->
+            current.probeReport?.let { report ->
+                SimpleCard("Capability Probe") {
+                    DetailRow("Firmware Fingerprint", report.firmwareFingerprint)
+                    DetailRow("الملخص", report.summary)
+                    report.items.forEach { item ->
+                        DetailRow(item.label, item.status.displayName)
+                        item.detail?.let { detail ->
+                            Text(detail, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 12.sp)
+                        }
                     }
-                }
-                report.bandSelection?.let { band ->
+                    report.bandSelection?.let { band ->
+                        HorizontalDivider()
+                        DetailRow("مصدر Band", band.source)
+                        OptionalDetailRow("NetworkBand raw", band.networkBandRaw)
+                        OptionalDetailRow("LTEBand raw", band.lteBandMaskRaw)
+                        OptionalDetailRow("NRBand raw", band.nrBandMaskRaw)
+                        if (band.decodedLteBands.isNotEmpty()) {
+                            DetailRow("LTE decoded", band.decodedLteBands.joinToString(" + ") { "B$it" })
+                        }
+                        if (band.decodedNrBands.isNotEmpty()) {
+                            DetailRow("NR decoded", band.decodedNrBands.joinToString(" + ") { "n$it" })
+                        }
+                        if (band.advertisedLteBands.isNotEmpty()) {
+                            DetailRow("LTE المعلنة", band.advertisedLteBands.joinToString(", ") { "B$it" })
+                        }
+                        band.note?.let { Text(it, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 12.sp) }
+                    }
+                    DetailRow("Network Lock قراءة", if (report.networkLockReadable) "متاحة" else "غير ظاهرة")
+                    DetailRow("NCK كتابة موثقة", if (report.nckEntryVerified) "نعم" else "لا")
                     HorizontalDivider()
-                    DetailRow("مصدر Band", band.source)
-                    OptionalDetailRow("NetworkBand raw", band.networkBandRaw)
-                    OptionalDetailRow("LTEBand raw", band.lteBandMaskRaw)
-                    OptionalDetailRow("NRBand raw", band.nrBandMaskRaw)
-                    if (band.decodedLteBands.isNotEmpty()) {
-                        DetailRow("LTE decoded", band.decodedLteBands.joinToString(" + ") { "B$it" })
-                    }
-                    if (band.decodedNrBands.isNotEmpty()) {
-                        DetailRow("NR decoded", band.decodedNrBands.joinToString(" + ") { "n$it" })
-                    }
-                    if (band.advertisedLteBands.isNotEmpty()) {
-                        DetailRow("LTE المعلنة", band.advertisedLteBands.joinToString(", ") { "B$it" })
-                    }
-                    band.note?.let { Text(it, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 12.sp) }
+                    Text("التقرير المنقّح لا يتضمن IMEI أو Serial أو IMSI/ICCID أو WAN IP أو SSID أو Gateway أو Tokens/Cookies.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+                    OutlinedButton(
+                        onClick = {
+                            val text = RouterDiagnosticsReport.build(current)
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "HAI MANAGER diagnostic")
+                                putExtra(Intent.EXTRA_TEXT, text)
+                            }
+                            context.startActivity(Intent.createChooser(send, "مشاركة تقرير التشخيص"))
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("مشاركة تقرير تشخيص منقّح") }
                 }
-                DetailRow("Network Lock قراءة", if (report.networkLockReadable) "متاحة" else "غير ظاهرة")
-                DetailRow("NCK كتابة موثقة", if (report.nckEntryVerified) "نعم" else "لا")
             }
         }
 
@@ -366,7 +389,7 @@ private fun HomeScreen(context: Context, modifier: Modifier = Modifier) {
         }
 
         SimpleCard("التوافق") {
-            Text("HAI MANAGER يطابق Model + Firmware ثم يجري Capability Probe قراءة فقط. NCK غير الموثق يبقى قراءة فقط، وBand Lock التجريبي لا يبدأ إلا بعد preflight يحافظ على القيمة الحالية ويتحقق منها.")
+            Text("HAI MANAGER يطابق Model + Firmware ثم يجري Capability Probe قراءة فقط. كل أمر حساس له probes مستقلة يجب أن تنجح قبل الكتابة، وBand Lock التجريبي لا يبدأ إلا بعد preflight يحافظ على القيمة الحالية ويتحقق منها.")
         }
     }
 }
