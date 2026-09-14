@@ -1,18 +1,10 @@
 package com.hai.manager
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -31,9 +23,6 @@ import com.hai.manager.router.RouterAuthService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/**
- * الاسم الداخلي بقي للتوافق مع MainActivity، لكن الشاشة Native بالكامل ولا تعرض WebUI/HTML أو عنوان الإدارة للمستخدم.
- */
 @Composable
 fun InAppRouterPanel(
     url: String,
@@ -47,42 +36,24 @@ fun InAppRouterPanel(
     var password by remember(url) { mutableStateOf("") }
     var busy by remember(url) { mutableStateOf(false) }
     var message by remember(url) { mutableStateOf<String?>(null) }
-    var success by remember(url) { mutableStateOf(false) }
 
-    LaunchedEffect(url) {
+    suspend fun detect() {
         detecting = true
         brand = runCatching { auth.detectBrand() }.getOrDefault(NativeRouterAuthBrand.UNKNOWN)
         detecting = false
     }
 
+    LaunchedEffect(url) { detect() }
     BackHandler(enabled = !busy) { onClose() }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+    HaiPage(
+        title = "تسجيل الدخول",
+        subtitle = if (detecting) null else brand.displayName
     ) {
-        Text("HAI MANAGER", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Text(
-            when {
-                detecting -> "تجهيز الراوتر…"
-                brand == NativeRouterAuthBrand.UNKNOWN -> "تسجيل الدخول إلى الراوتر"
-                else -> "تسجيل الدخول إلى ${brand.displayName}"
-            },
-            style = MaterialTheme.typography.headlineSmall
-        )
-        Text(
-            "إدارة Huawei وZTE تتم مباشرة من التطبيق. لن تظهر لك صفحة الراوتر الأصلية.",
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f)
-        )
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                DetailRow("الراوتر", if (detecting) "جارٍ التعرف…" else brand.displayName)
-
+        HaiCard {
+            if (detecting) {
+                CircularProgressIndicator()
+            } else {
                 if (brand != NativeRouterAuthBrand.ZTE) {
                     OutlinedTextField(
                         value = username,
@@ -92,18 +63,12 @@ fun InAppRouterPanel(
                         enabled = !busy,
                         modifier = Modifier.fillMaxWidth()
                     )
-                } else {
-                    Text(
-                        "ZTE يستخدم كلمة مرور الإدارة مباشرة في واجهات WebUI المدعومة.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f)
-                    )
                 }
 
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("كلمة مرور الإدارة") },
+                    label = { Text("كلمة المرور") },
                     singleLine = true,
                     enabled = !busy,
                     visualTransformation = PasswordVisualTransformation(),
@@ -118,59 +83,30 @@ fun InAppRouterPanel(
                             val result = auth.login(username.trim(), password)
                             busy = false
                             brand = result.brand
-                            message = result.message
-                            success = result.success
                             if (result.success) {
                                 password = ""
-                                delay(350)
+                                delay(250)
                                 onClose()
+                            } else {
+                                message = result.message
                             }
                         }
                     },
-                    enabled = !busy && !detecting && password.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth()
+                    enabled = !busy && password.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
                 ) {
-                    if (busy) CircularProgressIndicator(strokeWidth = 2.dp)
-                    else Text("تسجيل الدخول")
+                    if (busy) CircularProgressIndicator()
+                    else Text("دخول")
                 }
 
-                message?.let {
-                    Text(
-                        it,
-                        color = if (success) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.error
-                    )
-                }
+                message?.let { Text(it) }
             }
         }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("بعد تسجيل الدخول", style = MaterialTheme.typography.titleMedium)
-                Text("تظهر أدوات Wi‑Fi وSIM والشبكة وBand Lock وقفل المشغل داخل HAI MANAGER حسب دعم Model + Firmware.")
-                Text("كلمة المرور لا تُحفظ؛ يحتفظ التطبيق فقط بجلسة الإدارة التي يصدرها الراوتر.", style = MaterialTheme.typography.bodySmall)
-            }
-        }
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onClose, enabled = !busy, modifier = Modifier.weight(1f)) {
-                Text("إلغاء")
-            }
-            OutlinedButton(
-                onClick = {
-                    scope.launch {
-                        detecting = true
-                        brand = runCatching { auth.detectBrand() }.getOrDefault(NativeRouterAuthBrand.UNKNOWN)
-                        detecting = false
-                    }
-                },
-                enabled = !busy,
-                modifier = Modifier.weight(1f)
-            ) { Text("إعادة التعرف") }
-        }
+        OutlinedButton(
+            onClick = onClose,
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("رجوع") }
     }
 }
