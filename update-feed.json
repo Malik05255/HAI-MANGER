@@ -1,13 +1,13 @@
 {
-  "versionCode": 8,
-  "versionName": "0.4.1",
+  "versionCode": 9,
+  "versionName": "0.5.0",
   "apkUrl": "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/HAI-MANAGER.apk",
-  "notes": "تحسين موثوقية أوامر الراوتر، دعم تشخيص Netgear Nighthawk وحالة Firmware الرسمية، وتحسين مزامنة قاعدة الأجهزة.",
+  "notes": "تركيز المرحلة الأولى على Huawei وZTE: توسيع التعرف على الموديلات، قراءة SIM وقفل الشبكة، تحسين معلومات الشبكة، وإدارة Wi-Fi من الواجهة.",
   "mandatory": false,
   "signatureStable": true,
   "signingCertSha256": "D59B0F985ED8CF4A903938B7904A5F33EDA01E8817E994B6A20D78D164BC2441",
-  "sha256": "C1818311F8C0404A086F9524D8704CCF6526A9A0B0DF50B7B44CDF61BB709522",
+  "sha256": "15374D61C4D4A511702C675F6ACE7690065B93BF7596FB6F3A9E80941742ABCB",
   "channel": "beta",
-  "publishedAt": "2026-09-14T20:38:17Z",
-  "catalogVersion": 5
+  "publishedAt": "2026-09-14T20:55:05Z",
+  "catalogVersion": 6
 }
