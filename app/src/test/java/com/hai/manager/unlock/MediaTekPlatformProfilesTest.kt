@@ -34,6 +34,18 @@ class MediaTekPlatformProfilesTest {
     }
 
     @Test
+    fun mc8512CannotFallBackToLegacyZteCalculator() {
+        val report = ImeiUnlockFacade.analyze(
+            rawImei = "868757025499999",
+            brandHint = UnlockBrand.ZTE,
+            modelHint = "MC8512"
+        )
+        assertEquals(UnlockGeneration.FIVE_G, report.generation)
+        assertTrue(report.codes.isEmpty())
+        assertTrue(report.family.contains("MC8512"))
+    }
+
+    @Test
     fun mediatekDoesNotClaimImeiOnlyNck() {
         val t750 = PlatformResolver.resolve("ZLT-X28")!!
         val t830 = PlatformResolver.resolve("MediaTek T830")!!
