@@ -63,6 +63,7 @@ import com.hai.manager.router.RouterInspection
 import com.hai.manager.router.RouterInspectorService
 import com.hai.manager.router.RouterSnapshot
 import com.hai.manager.router.firmwareProfileInfo
+import com.hai.manager.unlock.UnlockBrand
 import com.hai.manager.update.ApkUpdateInstaller
 import com.hai.manager.update.AppUpdate
 import com.hai.manager.update.UpdateCheckResult
@@ -295,23 +296,38 @@ private fun HomeScreen(
             }
         }
 
-        if (connected && url != null) {
-            HaiActionGrid(
-                listOf(
-                    HaiAction("Wi-Fi", Icons.Outlined.Wifi) {
-                        context.startActivity(Intent(context, WifiToolsActivity::class.java).putExtra(WifiToolsActivity.EXTRA_URL, url))
-                    },
-                    HaiAction("SIM", Icons.Outlined.SimCard) {
-                        context.startActivity(Intent(context, SimToolsActivity::class.java).putExtra(SimToolsActivity.EXTRA_URL, url))
-                    },
-                    HaiAction("الشبكة", Icons.Outlined.Router, onClick = onRouter),
-                    HaiAction("نظام الراوتر", Icons.Outlined.SystemUpdate) {
-                        context.startActivity(Intent(context, FirmwareToolsActivity::class.java))
-                    },
-                    HaiAction("قفل المشغل", Icons.Outlined.Lock, onClick = onRouter)
-                )
+        val quickActions = mutableListOf<HaiAction>()
+        quickActions += HaiAction("فك الشبكة بالـIMEI", Icons.Outlined.Lock) {
+            val brand = when (inspection?.snapshot?.brand ?: router?.brand) {
+                RouterBrand.HUAWEI -> UnlockBrand.HUAWEI
+                RouterBrand.ZTE -> UnlockBrand.ZTE
+                else -> UnlockBrand.AUTO
+            }
+            context.startActivity(
+                Intent(context, ImeiUnlockActivity::class.java)
+                    .putExtra(ImeiUnlockActivity.EXTRA_IMEI, inspection?.device?.imei)
+                    .putExtra(ImeiUnlockActivity.EXTRA_MODEL, inspection?.device?.model ?: router?.model)
+                    .putExtra(ImeiUnlockActivity.EXTRA_BRAND, brand.name)
             )
         }
+
+        if (connected && url != null) {
+            quickActions += listOf(
+                HaiAction("Wi-Fi", Icons.Outlined.Wifi) {
+                    context.startActivity(Intent(context, WifiToolsActivity::class.java).putExtra(WifiToolsActivity.EXTRA_URL, url))
+                },
+                HaiAction("SIM", Icons.Outlined.SimCard) {
+                    context.startActivity(Intent(context, SimToolsActivity::class.java).putExtra(SimToolsActivity.EXTRA_URL, url))
+                },
+                HaiAction("الشبكة", Icons.Outlined.Router, onClick = onRouter),
+                HaiAction("نظام الراوتر", Icons.Outlined.SystemUpdate) {
+                    context.startActivity(Intent(context, FirmwareToolsActivity::class.java))
+                },
+                HaiAction("قفل المشغل", Icons.Outlined.Lock, onClick = onRouter)
+            )
+        }
+
+        HaiActionGrid(quickActions)
     }
 }
 

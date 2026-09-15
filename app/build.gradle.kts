@@ -13,8 +13,8 @@ android {
         applicationId = "com.hai.manager"
         minSdk = 26
         targetSdk = 37
-        versionCode = 26
-        versionName = "0.18.0"
+        versionCode = 27
+        versionName = "0.19.0"
     }
 
     val releaseKeystore = System.getenv("HAI_KEYSTORE_PATH")
@@ -56,4 +56,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
+
+    testImplementation("junit:junit:4.13.2")
 }

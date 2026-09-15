@@ -1,5 +1,8 @@
 package com.hai.manager
 
+import android.content.Intent
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -8,13 +11,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import com.hai.manager.router.CarrierLockState
+import com.hai.manager.router.RouterBrand
 import com.hai.manager.router.RouterCarrierLockProbeService
 import com.hai.manager.router.RouterCarrierLockSummary
 import com.hai.manager.router.RouterInspection
+import com.hai.manager.unlock.UnlockBrand
 
 @Composable
 fun RouterCarrierLockCard(inspection: RouterInspection) {
+    val context = LocalContext.current
     val service = remember { RouterCarrierLockProbeService() }
     val identity = listOf(
         inspection.snapshot.managementUrl,
@@ -46,6 +54,25 @@ fun RouterCarrierLockCard(inspection: RouterInspection) {
                 }
                 HaiValueRow("المحاولات المتبقية", result.attemptsRemaining)
             }
+        }
+
+        Button(
+            onClick = {
+                val brand = when (inspection.snapshot.brand) {
+                    RouterBrand.HUAWEI -> UnlockBrand.HUAWEI
+                    RouterBrand.ZTE -> UnlockBrand.ZTE
+                    else -> UnlockBrand.AUTO
+                }
+                context.startActivity(
+                    Intent(context, ImeiUnlockActivity::class.java)
+                        .putExtra(ImeiUnlockActivity.EXTRA_IMEI, inspection.device?.imei)
+                        .putExtra(ImeiUnlockActivity.EXTRA_MODEL, inspection.device?.model)
+                        .putExtra(ImeiUnlockActivity.EXTRA_BRAND, brand.name)
+                )
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("تحليل IMEI واستخراج كود الفك")
         }
     }
 }

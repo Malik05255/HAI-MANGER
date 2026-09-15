@@ -204,6 +204,37 @@ object RouterFirmwareProfiles {
             )
         }
 
+        if (brand == RouterBrand.HUAWEI && normalizedModel.isKnownHuaweiBalongV4Family()) {
+            return FirmwareProfileInfo(
+                profileId = "HUAWEI-BALONG-4G-V4-AWARE",
+                verification = FirmwareVerification.RUNTIME_PROBED,
+                model = normalizedModel,
+                firmware = normalizedFirmware.ifBlank { "غير معروف" },
+                bandLock = ProfileActionSupport.READ_ONLY,
+                nckEntry = ProfileActionSupport.READ_ONLY,
+                requiredProbes = setOf("huawei_session_token", "sim_security"),
+                actionProbes = mapOf(
+                    RouterWriteOperation.REBOOT to setOf("huawei_session_token"),
+                    RouterWriteOperation.NETWORK_MODE to setOf("huawei_session_token", "network_mode_read")
+                ),
+                notes = "B310/B311/B315 قد تستخدم قفل V4 يعتمد على Firmware/AT/hash. لا تُطبق أكواد V1/V2/V201 عليها تلقائيًا؛ يتم تشخيص القفل والـFirmware أولًا."
+            )
+        }
+
+        if (brand == RouterBrand.HUAWEI && normalizedModel.isKnownHuaweiLegacyBalongFamily()) {
+            return FirmwareProfileInfo(
+                profileId = "HUAWEI-LEGACY-BALONG-READ",
+                verification = FirmwareVerification.READ_ONLY,
+                model = normalizedModel,
+                firmware = normalizedFirmware.ifBlank { "غير معروف" },
+                bandLock = ProfileActionSupport.READ_ONLY,
+                nckEntry = ProfileActionSupport.READ_ONLY,
+                requiredProbes = setOf("sim_security"),
+                actionProbes = emptyMap(),
+                notes = "عائلة Balong قديمة؛ بعض الـFirmware غير متوافق مع HiLink الحديث، لذلك يبقى المسار قراءة وتشخيص فقط حتى المطابقة الدقيقة."
+            )
+        }
+
         if (brand == RouterBrand.HUAWEI && normalizedModel.isKnownHuaweiProfileFamily()) {
             return FirmwareProfileInfo(
                 profileId = "HUAWEI-HILINK-RUNTIME",
@@ -352,12 +383,24 @@ private fun JSONObject.stringList(key: String): List<String> {
     }
 }
 
-private fun String.isKnownZte5gProfileFamily(): Boolean =
-    contains("MC801", true) || contains("MC888", true) || contains("MC889", true) || contains("MC7010", true)
+private fun String.isKnownZte5gProfileFamily(): Boolean = listOf(
+    "MC801", "MC888", "MC889", "MC7010", "MU5001"
+).any { contains(it, true) }
 
-private fun String.isKnownZte4gProfileFamily(): Boolean =
-    contains("MF286", true) || contains("MF289", true) || contains("MF297", true)
+private fun String.isKnownZte4gProfileFamily(): Boolean = listOf(
+    "MF253", "MF283", "MF286", "MF289", "MF297"
+).any { contains(it, true) }
+
+private fun String.isKnownHuaweiBalongV4Family(): Boolean = listOf(
+    "B310", "B311", "B315"
+).any { contains(it, true) }
+
+private fun String.isKnownHuaweiLegacyBalongFamily(): Boolean = listOf(
+    "B593"
+).any { contains(it, true) }
 
 private fun String.isKnownHuaweiProfileFamily(): Boolean = listOf(
-    "H158", "H155", "H138", "H122", "H112", "B818", "B715", "B628", "B535", "B525"
+    "H158", "H155", "H138", "H122", "H112",
+    "B818", "B716", "B715", "B628", "B618", "B612", "B535", "B528", "B525",
+    "E5186", "E5577", "E5576"
 ).any { contains(it, true) }
