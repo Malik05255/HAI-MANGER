@@ -92,6 +92,8 @@ class ImeiUnlockActivity : ComponentActivity() {
         const val EXTRA_NCK_RAW = "unlock_nck_raw"
         const val EXTRA_WEBUI = "unlock_webui"
         const val EXTRA_LOCK_DIAGNOSTIC = "unlock_lock_diagnostic"
+        const val EXTRA_WEB_VERSION = "unlock_webui"
+        const val EXTRA_DIAGNOSTIC = "unlock_lock_diagnostic"
     }
 }
 
