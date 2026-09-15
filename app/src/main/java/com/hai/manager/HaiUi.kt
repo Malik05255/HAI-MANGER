@@ -35,29 +35,29 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val HaiBackground = Color(0xFFF7F8FC)
-private val HaiSurface = Color(0xFFFFFFFF)
-private val HaiPrimary = Color(0xFF3457D5)
-private val HaiPrimaryContainer = Color(0xFFE9EDFF)
-private val HaiText = Color(0xFF171A23)
-private val HaiMuted = Color(0xFF6D7280)
-private val HaiOutline = Color(0xFFE4E7EF)
+private val ClassicBackground = Color(0xFFF3F4F6)
+private val ClassicSurface = Color(0xFFFFFFFF)
+private val ClassicPrimary = Color(0xFF233A59)
+private val ClassicPrimaryContainer = Color(0xFFE8EDF3)
+private val ClassicText = Color(0xFF17202B)
+private val ClassicMuted = Color(0xFF66717E)
+private val ClassicOutline = Color(0xFFD9DEE5)
 
 @Composable
 internal fun HaiTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = lightColorScheme(
-            primary = HaiPrimary,
+            primary = ClassicPrimary,
             onPrimary = Color.White,
-            primaryContainer = HaiPrimaryContainer,
-            onPrimaryContainer = HaiText,
-            background = HaiBackground,
-            surface = HaiSurface,
-            onSurface = HaiText,
-            onSurfaceVariant = HaiMuted,
-            outline = HaiOutline,
-            outlineVariant = HaiOutline,
-            error = Color(0xFFC33B4A)
+            primaryContainer = ClassicPrimaryContainer,
+            onPrimaryContainer = ClassicText,
+            background = ClassicBackground,
+            surface = ClassicSurface,
+            onSurface = ClassicText,
+            onSurfaceVariant = ClassicMuted,
+            outline = ClassicOutline,
+            outlineVariant = ClassicOutline,
+            error = Color(0xFFB3261E)
         ),
         content = content
     )
@@ -76,23 +76,23 @@ internal fun HaiPage(
             .background(MaterialTheme.colorScheme.background)
     ) {
         val horizontalPadding = when {
-            maxWidth < 360.dp -> 12.dp
-            maxWidth < 600.dp -> 16.dp
+            maxWidth < 360.dp -> 14.dp
+            maxWidth < 600.dp -> 18.dp
             else -> 24.dp
         }
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .widthIn(max = 980.dp)
+                .widthIn(max = 820.dp)
                 .align(Alignment.TopCenter)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = horizontalPadding, vertical = 18.dp),
+                .padding(horizontal = horizontalPadding, vertical = 22.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 subtitle?.takeIf { it.isNotBlank() }?.let {
-                    Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                    Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                 }
             }
             content()
@@ -107,20 +107,21 @@ internal fun HaiCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(11.dp)
         ) { content() }
     }
 }
 
 @Composable
 internal fun HaiSectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 }
 
 @Composable
@@ -132,15 +133,15 @@ internal fun HaiValueRow(label: String, value: String?) {
     ) {
         Text(
             label,
-            modifier = Modifier.weight(0.28f),
+            modifier = Modifier.weight(0.38f),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 13.sp,
             textAlign = TextAlign.Start
         )
         Text(
             value,
-            modifier = Modifier.weight(0.72f),
-            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(0.62f),
+            fontWeight = FontWeight.SemiBold,
             fontSize = 14.sp,
             textAlign = TextAlign.End,
             maxLines = 3
@@ -151,15 +152,15 @@ internal fun HaiValueRow(label: String, value: String?) {
 @Composable
 internal fun HaiStatusChip(text: String, active: Boolean = true) {
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = RoundedCornerShape(8.dp),
         color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
     ) {
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
             color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.SemiBold
         )
     }
 }
@@ -193,8 +194,8 @@ internal fun HaiActionGrid(actions: List<HaiAction>) {
                 Card(
                     onClick = item.onClick,
                     enabled = item.enabled,
-                    modifier = Modifier.width(tileWidth).heightIn(min = 96.dp),
-                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.width(tileWidth).heightIn(min = 92.dp),
+                    shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
@@ -203,14 +204,14 @@ internal fun HaiActionGrid(actions: List<HaiAction>) {
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.primaryContainer
                         ) {
                             Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
                                 Icon(item.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             }
                         }
-                        Text(item.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text(item.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                 }
             }
