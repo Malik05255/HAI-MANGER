@@ -17,7 +17,15 @@ data class RouterCarrierLockSummary(
     val attemptsRemaining: String? = null,
     val rawState: String? = null,
     val source: String,
-    val note: String? = null
+    val note: String? = null,
+    val modemState: String? = null,
+    val waitingForNck: Boolean = false,
+    val lockedHplmns: String? = null,
+    val routerImei: String? = null,
+    val innerVersion: String? = null,
+    val webVersion: String? = null,
+    val nckRelatedValue: String? = null,
+    val diagnostic: String? = null
 )
 
 class RouterCarrierLockProbeService {
@@ -59,7 +67,12 @@ class RouterCarrierLockProbeService {
             attemptsRemaining = attempts,
             rawState = raw,
             source = "Huawei HiLink /api/pin/simlock",
-            note = "HiLink يعلن حالة SIM lock وعدد المحاولات، لكنه لا يعلن دائمًا اسم المشغل الذي خُصص له القفل."
+            note = "HiLink يعلن حالة SIM lock وعدد المحاولات، لكنه لا يعلن دائمًا اسم المشغل الذي خُصص له القفل.",
+            diagnostic = when (decodeLockState(raw)) {
+                CarrierLockState.LOCKED -> "واجهة Huawei تعلن أن SIM/Network lock مفعّل."
+                CarrierLockState.UNLOCKED -> "واجهة Huawei تعلن أن SIM/Network lock غير مفعّل."
+                CarrierLockState.UNKNOWN -> "لم تحسم واجهة Huawei حالة Network lock من الحقول المقروءة."
+            }
         )
     }
 
@@ -70,28 +83,54 @@ class RouterCarrierLockProbeService {
         val response = runCatching {
             client.get(
                 "/goform/goform_get_cmd_process?isTest=false&cmd=" +
-                    "network_lock_status,network_lock,network_unlock_remain_count,unlock_nck_time,network_provider&multi_data=1"
+                    "network_lock_status,network_lock,lock_status,network_unlock_remain_count," +
+                    "unlock_nck_time,locked_hplmns,modem_main_state,network_provider,imei," +
+                    "wa_inner_version,web_version&multi_data=1"
             )
         }.getOrNull()
         val json = response?.body?.let { runCatching { JSONObject(it) }.getOrNull() }
 
-        fun value(vararg keys: String): String? = keys.firstNotNullOfOrNull { key ->
-            json?.optString(key, "")?.trim()?.takeIf(::meaningfulLockValue)
-        }
+        fun value(key: String): String? = json
+            ?.optString(key, "")
+            ?.trim()
+            ?.takeIf(::meaningfulLockValue)
 
-        val raw = value("network_lock_status", "network_lock") ?: inspection.security?.networkLockState
-        val attempts = value("network_unlock_remain_count", "unlock_nck_time")
-            ?: inspection.security?.unlockAttemptsRemaining
-        val operator = value("network_provider") ?: inspection.signal?.operatorName
+        val rawSnapshot = ZteLockRawSnapshot(
+            networkLockStatus = value("network_lock_status"),
+            networkLock = value("network_lock"),
+            lockStatus = value("lock_status"),
+            networkUnlockRemainCount = value("network_unlock_remain_count"),
+            unlockNckTime = value("unlock_nck_time"),
+            lockedHplmns = value("locked_hplmns"),
+            modemMainState = value("modem_main_state"),
+            networkProvider = value("network_provider"),
+            imei = value("imei"),
+            innerVersion = value("wa_inner_version"),
+            webVersion = value("web_version")
+        )
+        val interpreted = ZteLockDiagnosticsInterpreter.interpret(rawSnapshot)
+        val fallbackRaw = inspection.security?.networkLockState
+        val state = if (interpreted.state == CarrierLockState.UNKNOWN && fallbackRaw != null) {
+            decodeLockState(fallbackRaw)
+        } else interpreted.state
+        val operator = rawSnapshot.networkProvider ?: inspection.signal?.operatorName
 
         return RouterCarrierLockSummary(
-            state = decodeLockState(raw),
+            state = state,
             currentOperator = operator,
             lockedOperator = null,
-            attemptsRemaining = attempts,
-            rawState = raw,
-            source = "ZTE WebUI network lock diagnostics",
-            note = "اسم الشبكة الحالية لا يعني بالضرورة أنها الشبكة التي قُفل عليها الراوتر؛ لا يعرض التطبيق اسم المشغل المقيد عليه إلا إذا كشفه WebUI صراحة."
+            attemptsRemaining = interpreted.attemptsRemaining,
+            rawState = interpreted.rawState ?: fallbackRaw,
+            source = "ZTE WebUI goform read-only lock diagnostics",
+            note = "unlock_nck_time يُعرض كقيمة NCK خام فقط؛ لا يعتبره HAI عدد محاولات متبقية ما لم يكشف الراوتر network_unlock_remain_count صراحة.",
+            modemState = interpreted.modemMainState,
+            waitingForNck = interpreted.waitingForNck,
+            lockedHplmns = interpreted.lockedHplmns,
+            routerImei = rawSnapshot.imei,
+            innerVersion = rawSnapshot.innerVersion,
+            webVersion = rawSnapshot.webVersion,
+            nckRelatedValue = interpreted.nckRelatedValue,
+            diagnostic = interpreted.diagnostic
         )
     }
 
