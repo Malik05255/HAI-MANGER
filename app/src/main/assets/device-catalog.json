@@ -1,29 +1,45 @@
 {
-  "catalogVersion": 12,
+  "catalogVersion": 13,
   "updatedAt": "2026-09-15",
   "focus": ["ZTE", "Huawei"],
-  "diagnosticsVersion": 2,
+  "diagnosticsVersion": 3,
   "writeSafetyVersion": 1,
   "devices": [
-    {"brand":"ZTE","model":"MC888 Ultra","aliases":["MC888 Ultra"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC888 Ultra","aliases":["MC888 Ultra","MC888A Ultra"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
     {"brand":"ZTE","model":"MC888 Pro","aliases":["MC888 Pro"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
     {"brand":"ZTE","model":"MC888","aliases":["MC888","MC888D"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
     {"brand":"ZTE","model":"MC801A","aliases":["MC801A"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
-    {"brand":"ZTE","model":"MC889","aliases":["MC889","MC889A"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MC889","aliases":["MC889","MC889A","MC889 Ultra"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
     {"brand":"ZTE","model":"MC7010","aliases":["MC7010","MC7010CA"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"runtime_preflight","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MU5001","aliases":["MU5001"],"generation":"5G","profile":"ZTE-5G-GOFORM-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
     {"brand":"ZTE","model":"MF297D","aliases":["MF297D"],"generation":"4G","profile":"ZTE-4G-GOFORM-READ","bandLock":"read_only","networkUnlock":"diagnostics_only"},
     {"brand":"ZTE","model":"MF289F","aliases":["MF289F"],"generation":"4G","profile":"ZTE-4G-GOFORM-READ","bandLock":"read_only","networkUnlock":"diagnostics_only"},
-    {"brand":"ZTE","model":"MF286","aliases":["MF286","MF286D","MF286R"],"generation":"4G","profile":"ZTE-4G-GOFORM-READ","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MF286","aliases":["MF286","MF286D","MF286R","MF286C3"],"generation":"4G","profile":"ZTE-4G-GOFORM-READ","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MF253","aliases":["MF253","MF253V","MF253+"],"generation":"4G","profile":"ZTE-4G-GOFORM-READ","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"ZTE","model":"MF283","aliases":["MF283","MF283V"],"generation":"4G","profile":"ZTE-4G-GOFORM-READ","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+
     {"brand":"Huawei","model":"H158-381","aliases":["H158-381"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
     {"brand":"Huawei","model":"H155-381","aliases":["H155-381"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
     {"brand":"Huawei","model":"H138-380","aliases":["H138-380"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"H122-373","aliases":["H122-373"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"H112-370","aliases":["H112-370"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"B818","aliases":["B818"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"B715","aliases":["B715"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"B628","aliases":["B628"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"B535","aliases":["B535"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
-    {"brand":"Huawei","model":"B525","aliases":["B525"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"}
+    {"brand":"Huawei","model":"H122-373","aliases":["H122-373","5G CPE Pro 2"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"H112-370","aliases":["H112-370","5G CPE Pro"],"generation":"5G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+
+    {"brand":"Huawei","model":"B818","aliases":["B818","B818-263"],"generation":"4G+","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B716","aliases":["B716","B716-263"],"generation":"4G+","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B715","aliases":["B715","B715s-23c"],"generation":"4G+","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B628","aliases":["B628","B628-265"],"generation":"4G+","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B618","aliases":["B618"],"generation":"4G+","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B612","aliases":["B612","B612-233"],"generation":"4G+","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B535","aliases":["B535","B535-232","B535-333"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B528","aliases":["B528","B528s"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B525","aliases":["B525","B525s-23a","B525s-65a"],"generation":"4G+","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B315","aliases":["B315","B315s-22","B315s-927"],"generation":"4G","profile":"HUAWEI-BALONG-4G-V4-AWARE","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B311","aliases":["B311","B311-221"],"generation":"4G","profile":"HUAWEI-BALONG-4G-V4-AWARE","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"B310","aliases":["B310","B310s-22","B310s-927"],"generation":"4G","profile":"HUAWEI-BALONG-4G-V4-AWARE","bandLock":"read_only","networkUnlock":"diagnostics_only","tacHints":["86946504"]},
+    {"brand":"Huawei","model":"B593","aliases":["B593","B593s-22"],"generation":"4G","profile":"HUAWEI-LEGACY-BALONG-READ","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"E5186","aliases":["E5186","E5186s-22a"],"generation":"4G+","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"diagnostics_only"},
+    {"brand":"Huawei","model":"E5577","aliases":["E5577","E5577Cs-321"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"legacy_candidate"},
+    {"brand":"Huawei","model":"E5576","aliases":["E5576","E5576-320"],"generation":"4G","profile":"HUAWEI-HILINK-RUNTIME","bandLock":"read_only","networkUnlock":"legacy_candidate"}
   ],
   "firmwareProfiles": [
     {
@@ -45,7 +61,7 @@
     {
       "id":"ZTE-5G-GOFORM-RUNTIME",
       "brand":"ZTE",
-      "families":["MC801","MC888","MC889","MC7010"],
+      "families":["MC801","MC888","MC889","MC7010","MU5001"],
       "verification":"runtime_probed",
       "bandLock":"runtime_preflight",
       "preflight":"write current readable band list unchanged, read it back, abort if mismatch",
@@ -56,12 +72,12 @@
         "networkMode":["zte_action_seed","network_mode_read"],
         "bandLock":["zte_action_seed","network_mode_read","nr_band_state"]
       },
-      "notes":"إذا كان band mask مشفرًا أو فشل probe أو no-op preflight، يمنع HAI MANAGER الكتابة."
+      "notes":"عائلة ZTE 5G الحديثة. NCK يُقرأ/يشخّص فقط حتى تثبت خوارزمية أو endpoint كتابة خاص بالعائلة."
     },
     {
       "id":"ZTE-4G-GOFORM-READ",
       "brand":"ZTE",
-      "families":["MF286","MF289","MF297"],
+      "families":["MF253","MF283","MF286","MF289","MF297"],
       "verification":"runtime_probed",
       "bandLock":"read_only",
       "nck":"read_only",
@@ -73,9 +89,23 @@
       "notes":"تشخيص وقراءة فقط للعمليات الحساسة حتى توثيق Firmware محدد."
     },
     {
+      "id":"HUAWEI-BALONG-4G-V4-AWARE",
+      "brand":"Huawei",
+      "families":["B310","B311","B315"],
+      "verification":"runtime_probed",
+      "bandLock":"read_only",
+      "nck":"read_only",
+      "requiredProbes":["huawei_session_token","sim_security"],
+      "actionProbes":{
+        "reboot":["huawei_session_token"],
+        "networkMode":["huawei_session_token","network_mode_read"]
+      },
+      "notes":"B310/B315 قد تستخدم قفل V4 يعتمد على Firmware/AT/hash؛ لا تُعمم عليها أكواد V1/V2/V201 تلقائيًا."
+    },
+    {
       "id":"HUAWEI-HILINK-RUNTIME",
       "brand":"Huawei",
-      "families":["H158","H155","H138","H122","H112","B818","B715","B628","B535","B525"],
+      "families":["H158","H155","H138","H122","H112","B818","B716","B715","B628","B618","B612","B535","B528","B525","E5186","E5577","E5576"],
       "verification":"runtime_probed",
       "bandLock":"read_only",
       "nck":"read_only",
@@ -85,6 +115,16 @@
         "networkMode":["huawei_session_token","network_mode_read","band_selection_read"]
       },
       "notes":"تستخدم واجهات HiLink للأوامر المثبتة فقط. Band Lock وNCK يحتاجان Profile Firmware موثق قبل تفعيل الكتابة."
+    },
+    {
+      "id":"HUAWEI-LEGACY-BALONG-READ",
+      "brand":"Huawei",
+      "families":["B593"],
+      "verification":"read_only",
+      "bandLock":"read_only",
+      "nck":"read_only",
+      "requiredProbes":["sim_security"],
+      "notes":"Firmware قديم وغير متوافق مع بعض HiLink APIs الحديثة؛ يبقى تشخيصيًا حتى التحقق من النسخة."
     }
   ],
   "firmwareUpdates": [],
