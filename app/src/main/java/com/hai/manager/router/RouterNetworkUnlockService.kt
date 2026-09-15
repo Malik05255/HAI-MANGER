@@ -36,7 +36,7 @@ class RouterNetworkUnlockService {
             client.get(
                 "/goform/goform_get_cmd_process?isTest=false&cmd=" +
                     "wa_inner_version,cr_version,RD,network_lock_status,network_lock," +
-                    "network_unlock_remain_count&multi_data=1"
+                    "network_unlock_remain_count,modem_main_state&multi_data=1"
             )
         }.getOrNull() ?: return RouterActionResult(false, "تعذر فحص جلسة الراوتر قبل الفك")
 
@@ -49,14 +49,20 @@ class RouterNetworkUnlockService {
 
         val rawLock = value("network_lock_status", "network_lock")
         val attempts = value("network_unlock_remain_count")?.toIntOrNull()
+        val modemMainState = value("modem_main_state")
+        val waitingForNck = modemMainState?.contains("waitnck", ignoreCase = true) == true
+
         if (rawLock != null && isUnlocked(rawLock)) {
             return RouterActionResult(true, "الراوتر مفتوح أصلًا")
         }
         if (attempts == 0) {
             return RouterActionResult(false, "محاولات رقم الفك منتهية؛ لن يرسل HAI أي رقم إضافي")
         }
-        if (rawLock == null && attempts == null) {
-            return RouterActionResult(false, "جلسة الإدارة غير جاهزة؛ سجّل الدخول ثم أعد التشخيص")
+        if (rawLock == null && attempts == null && !waitingForNck) {
+            return RouterActionResult(
+                false,
+                "لم يثبت الراوتر أنه ينتظر NCK. ركّب شريحة من شركة أخرى ثم أعد التشخيص"
+            )
         }
 
         val ad = ZteNckRuntime.computeAd(
