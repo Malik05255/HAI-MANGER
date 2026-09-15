@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.hai.manager.unlock.ImeiUnlockFacade
 import com.hai.manager.unlock.ImeiUnlockReport
+import com.hai.manager.unlock.TacResolver
 import com.hai.manager.unlock.UnlockBrand
 import com.hai.manager.unlock.UnlockConfidence
 
@@ -130,6 +131,8 @@ private fun ImeiUnlockScreen(
         }
 
         report?.let { result ->
+            val tacMatch = TacResolver.resolve(result.imei)
+
             HaiCard {
                 HaiSectionTitle("النتيجة")
                 HaiValueRow("IMEI", result.imei)
@@ -138,6 +141,23 @@ private fun ImeiUnlockScreen(
                 HaiValueRow("الجيل", result.generation.displayName)
                 HaiValueRow("العائلة", result.family)
                 Text(result.warning)
+            }
+
+            if (tacMatch != null) {
+                HaiCard {
+                    HaiSectionTitle("التعرف من IMEI")
+                    HaiValueRow("TAC", tacMatch.tac)
+                    HaiValueRow("الموديل", tacMatch.model)
+                    HaiValueRow("Profile", tacMatch.profile)
+                    HaiValueRow("الجيل المتوقع", tacMatch.generation.displayName)
+                    Text("مصدر المطابقة: ${tacMatch.evidence}")
+                    Text("TAC يحدد عائلة الجهاز فقط ولا يرفع ثقة خوارزمية NCK تلقائيًا.")
+                }
+            } else {
+                HaiCard {
+                    HaiSectionTitle("TAC غير موجود في الكتالوج")
+                    Text("لم يتعرف HAI على أول 8 أرقام من IMEI. يمكنك اختيار الشركة يدويًا، لكن لن يتم اعتبار الموديل موثقًا حتى يضاف TAC إلى القاعدة.")
+                }
             }
 
             if (result.codes.isNotEmpty()) {
