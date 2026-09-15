@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import com.hai.manager.unlock.ImeiUnlockEngine
 import com.hai.manager.unlock.ImeiUnlockReport
 import com.hai.manager.unlock.UnlockBrand
@@ -98,7 +99,10 @@ private fun ImeiUnlockScreen(
 
             if (initialBrand == UnlockBrand.AUTO) {
                 Text("الشركة", fontWeight = FontWeight.SemiBold)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(androidx.compose.ui.unit.dp(8f))) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     UnlockBrand.entries.filter { it != UnlockBrand.AUTO }.forEach { item ->
                         FilterChip(
                             selected = brand == item,
