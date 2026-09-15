@@ -1,6 +1,9 @@
 package com.hai.manager
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -58,6 +61,7 @@ import com.hai.manager.router.RouterInspection
 import com.hai.manager.router.RouterInspectorService
 import com.hai.manager.router.RouterNetworkUnlockService
 import com.hai.manager.router.RouterSnapshot
+import com.hai.manager.router.UnlockErrorReport
 import com.hai.manager.router.firmwareProfileInfo
 import com.hai.manager.unlock.ImeiUnlockFacade
 import com.hai.manager.unlock.PlatformResolver
@@ -134,6 +138,20 @@ fun HaiManagerApp() {
         manualNck = ""
         showNckEntry = false
         message = null
+    }
+
+    fun copyErrors() {
+        val report = UnlockErrorReport.build(
+            appVersion = BuildConfig.VERSION_NAME,
+            phase = stage.name,
+            router = router,
+            inspection = inspection,
+            lock = lockSummary,
+            message = message
+        )
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("HAI MANAGER errors", report))
+        Toast.makeText(context, "تم نسخ الأخطاء. أرسلها لي كما هي.", Toast.LENGTH_SHORT).show()
     }
 
     fun checkForUpdate() {
@@ -302,6 +320,7 @@ fun HaiManagerApp() {
                         onDiagnose = ::diagnose,
                         onLogin = { loginUrl = router?.managementUrl },
                         onUnlock = ::unlock,
+                        onCopyErrors = ::copyErrors,
                         onBack = {
                             resetSystem()
                             screen = AppScreen.HOME
@@ -391,6 +410,7 @@ private fun SystemUnlockScreen(
     onDiagnose: () -> Unit,
     onLogin: () -> Unit,
     onUnlock: () -> Unit,
+    onCopyErrors: () -> Unit,
     onBack: () -> Unit
 ) {
     val model = inspection?.device?.model ?: router?.model
@@ -403,6 +423,7 @@ private fun SystemUnlockScreen(
     val unlocked = lockSummary?.state == CarrierLockState.UNLOCKED || stage == SystemStage.DONE
     val needsForeignSimTest = lockSummary?.requiresForeignSimTest == true
     val canUnlock = locked && runtimeReady && !attemptsZero
+    val showCopyErrors = stage == SystemStage.RESULT && (message != null || !canUnlock)
     val lockText = when {
         unlocked -> "مفكوك"
         locked -> "مقفل"
@@ -491,6 +512,12 @@ private fun SystemUnlockScreen(
             } else if (unlocked) {
                 HaiCard {
                     Text("الراوتر مفكوك وجاهز لشريحة أخرى.", fontWeight = FontWeight.Bold)
+                }
+            }
+
+            if (showCopyErrors) {
+                OutlinedButton(onClick = onCopyErrors, modifier = Modifier.fillMaxWidth()) {
+                    Text("نسخ الأخطاء")
                 }
             }
 
