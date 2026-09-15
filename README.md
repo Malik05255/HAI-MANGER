@@ -23,8 +23,11 @@
 - Qualcomm SDX62: ZTE MC888 / MC888D / MC888 Pro / MU5120.
 - Qualcomm SDX65: MC888A / MC888A Ultra بدرجة ثقة مجتمعية، ولا يتم تعميمه على كل Ultra/MC889 SKU.
 - Qualcomm SDX75 / SDXPINN: ZTE U60 Pro / MU5250.
+- MediaTek T750 / MT6890: مرجع لمنصات CPE مثل NR5103/FWA505/ZLT-X28 لفهم boot/storage/NVRAM، وليس دعم ZTE مباشرًا.
+- MediaTek T830 / M80: جيل مستقل عن T750؛ لا يتم تطبيق أدوات MT6890 عليه تلقائيًا.
+- ZTE MC8512 يعامل كـ`Variant-dependent` حتى يثبت الـHardware/Firmware؛ لا يفترض HAI أن كل G5 Ultra هو نفس المنصة.
 - الموديلات التي تختلف شريحتها حسب SKU تظهر كـ`Variant-dependent` بدل تخمين منصة واحدة.
-- واجهة IMEI تعرض منصة المودم، طبقات البحث المناسبة، والمشاريع المفتوحة المصدر المرجعية لكل منصة.
+- واجهة IMEI تعرض منصة المودم، طبقات البحث المناسبة، personalization path، حالة IMEI→NCK، والمشاريع المفتوحة المصدر المرجعية لكل منصة.
 
 ## Huawei Balong generations
 - V7R1 / Hi6920: E5172 / E5180 / B593s.
@@ -39,7 +42,7 @@
 - لا يتم إدراج TAC لمجرد ظهوره في منشور مجهول؛ نفضّل قوائم المشغلين الرسمية، أدلة FCC، وكتالوجات TAC المفتوحة ذات المصدر المحدد.
 - TAC يعرّف عائلة الجهاز فقط ولا يثبت خوارزمية NCK.
 - Platform identification لا يمنح صلاحيات كتابة جديدة تلقائيًا.
-- SDX/EDL/NV/EFS وBalong boot/NVRAM تبقى طبقات بحث واستعادة ما لم يوجد Profile جهاز موثق يسمح بغير ذلك.
-- خريطة المشاريع والطبقات موجودة في `docs/CHIPSET_RESEARCH.md`.
+- SDX/EDL/NV/EFS وBalong boot/NVRAM وMediaTek BROM/DA/NVRAM تبقى طبقات بحث واستعادة ما لم يوجد Profile جهاز موثق يسمح بغير ذلك.
+- خريطة Qualcomm/Balong موجودة في `docs/CHIPSET_RESEARCH.md`، وخريطة MediaTek في `docs/MEDIATEK_RESEARCH.md`.
 
 > الهدف هو زيادة التغطية بدون التضحية بالدقة: إذا لم توجد خوارزمية IMEI-only موثقة لعائلة معينة، يعرض التطبيق التشخيص والمسار المناسب بدل إنشاء كود عشوائي قد يستهلك محاولات NCK.
