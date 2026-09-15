@@ -22,12 +22,14 @@ internal object ZteNckRuntime {
         "/web/js/network_lock.js"
     )
 
+    private val unlockCommand = Regex("\\bUNLOCK_NETWORK\\b", RegexOption.IGNORE_CASE)
+
     fun isMc801a(model: String?): Boolean =
         model.orEmpty().contains("MC801A", ignoreCase = true)
 
     fun exposesUnlockNetwork(source: String): Boolean {
         if (source.isBlank()) return false
-        return source.contains("UNLOCK_NETWORK", ignoreCase = true) &&
+        return unlockCommand.containsMatchIn(source) &&
             source.contains("unlock_network_code", ignoreCase = true)
     }
 
