@@ -1,47 +1,39 @@
 package com.hai.manager
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Router
-import androidx.compose.material.icons.outlined.SimCard
-import androidx.compose.material.icons.outlined.SystemUpdate
-import androidx.compose.material.icons.outlined.Wifi
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -49,27 +41,28 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import com.hai.manager.router.NetworkMode
+import com.hai.manager.router.CarrierLockState
 import com.hai.manager.router.RouterAccessStatus
-import com.hai.manager.router.RouterActionResult
-import com.hai.manager.router.RouterActionService
 import com.hai.manager.router.RouterBrand
-import com.hai.manager.router.RouterCapability
+import com.hai.manager.router.RouterCarrierLockProbeService
+import com.hai.manager.router.RouterCarrierLockSummary
 import com.hai.manager.router.RouterCapabilityProbeService
 import com.hai.manager.router.RouterDiscoveryService
 import com.hai.manager.router.RouterInspection
 import com.hai.manager.router.RouterInspectorService
+import com.hai.manager.router.RouterNetworkUnlockService
 import com.hai.manager.router.RouterSnapshot
 import com.hai.manager.router.firmwareProfileInfo
+import com.hai.manager.unlock.ImeiUnlockFacade
+import com.hai.manager.unlock.PlatformResolver
 import com.hai.manager.unlock.UnlockBrand
-import com.hai.manager.update.ApkUpdateInstaller
-import com.hai.manager.update.AppUpdate
-import com.hai.manager.update.UpdateCheckResult
+import com.hai.manager.unlock.UnlockConfidence
 import com.hai.manager.update.UpdateNotifications
-import com.hai.manager.update.UpdateRepository
 import com.hai.manager.update.UpdateScheduler
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -91,9 +84,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class AppTab(val title: String) {
-    HOME("الرئيسية"), ROUTER("الراوتر"), UPDATES("التحديثات")
-}
+private enum class AppScreen { HOME, SYSTEM_UNLOCK }
+private enum class SystemStage { READY, DIAGNOSING, RESULT, UNLOCKING, DONE }
 
 @Composable
 fun HaiManagerApp() {
@@ -102,42 +94,124 @@ fun HaiManagerApp() {
     val discovery = remember { RouterDiscoveryService(context.applicationContext) }
     val inspector = remember { RouterInspectorService() }
     val probe = remember { RouterCapabilityProbeService() }
-    val actions = remember { RouterActionService() }
+    val lockProbe = remember { RouterCarrierLockProbeService() }
+    val unlocker = remember { RouterNetworkUnlockService() }
 
-    var tab by remember { mutableStateOf(AppTab.HOME) }
-    var scanning by remember { mutableStateOf(false) }
+    var screen by remember { mutableStateOf(AppScreen.HOME) }
+    var stage by remember { mutableStateOf(SystemStage.READY) }
+    var progress by remember { mutableIntStateOf(0) }
     var router by remember { mutableStateOf<RouterSnapshot?>(null) }
     var inspection by remember { mutableStateOf<RouterInspection?>(null) }
-    var actionBusy by remember { mutableStateOf(false) }
-    var actionMessage by remember { mutableStateOf<String?>(null) }
+    var lockSummary by remember { mutableStateOf<RouterCarrierLockSummary?>(null) }
+    var verifiedNck by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
     var loginUrl by remember { mutableStateOf<String?>(null) }
-    var confirmReboot by remember { mutableStateOf(false) }
 
-    fun scan() {
-        scope.launch {
-            scanning = true
-            actionMessage = null
-            val found = discovery.discover()
-            router = found
-            val inspected = if (found.connected && found.managementUrl != null) inspector.inspect(found) else null
-            inspection = inspected?.let { probe.enrich(it) }
-            scanning = false
+    suspend fun moveProgress(target: Int) {
+        while (progress < target) {
+            delay(10)
+            progress = (progress + 2).coerceAtMost(target)
         }
     }
 
-    fun runAction(block: suspend () -> RouterActionResult) {
+    fun resetSystem() {
+        stage = SystemStage.READY
+        progress = 0
+        router = null
+        inspection = null
+        lockSummary = null
+        verifiedNck = null
+        message = null
+    }
+
+    fun diagnose() {
+        if (stage == SystemStage.DIAGNOSING || stage == SystemStage.UNLOCKING) return
         scope.launch {
-            actionBusy = true
-            val result = block()
-            actionMessage = result.message
-            actionBusy = false
+            stage = SystemStage.DIAGNOSING
+            progress = 0
+            message = null
+            lockSummary = null
+            verifiedNck = null
+            moveProgress(12)
+
+            val found = discovery.discover()
+            router = found
+            moveProgress(30)
+            if (!found.connected || found.managementUrl == null) {
+                message = "لم يتم العثور على الراوتر. اتصل بشبكة الراوتر ثم أعد المحاولة."
+                moveProgress(100)
+                stage = SystemStage.RESULT
+                return@launch
+            }
+
+            val inspected = inspector.inspect(found)
+            inspection = inspected
+            moveProgress(52)
+            if (inspected.accessStatus == RouterAccessStatus.AUTH_REQUIRED) {
+                message = "يحتاج الراوتر تسجيل الدخول أولًا."
+                moveProgress(100)
+                stage = SystemStage.RESULT
+                return@launch
+            }
+            if (inspected.accessStatus != RouterAccessStatus.AVAILABLE) {
+                message = "تعذر قراءة الراوتر. تأكد من الاتصال ثم أعد التشخيص."
+                moveProgress(100)
+                stage = SystemStage.RESULT
+                return@launch
+            }
+
+            val enriched = probe.enrich(inspected)
+            inspection = enriched
+            moveProgress(74)
+            lockSummary = runCatching { lockProbe.probe(enriched) }.getOrNull()
+            moveProgress(88)
+
+            val imei = enriched.device?.imei.orEmpty().filter(Char::isDigit)
+            if (imei.length == 15) {
+                val brand = when (enriched.snapshot.brand) {
+                    RouterBrand.HUAWEI -> UnlockBrand.HUAWEI
+                    RouterBrand.ZTE -> UnlockBrand.ZTE
+                    else -> UnlockBrand.AUTO
+                }
+                verifiedNck = runCatching {
+                    ImeiUnlockFacade.analyze(imei, brand, enriched.device?.model)
+                        .codes
+                        .firstOrNull { it.confidence == UnlockConfidence.VERIFIED }
+                        ?.code
+                }.getOrNull()
+            }
+
+            moveProgress(100)
+            stage = if (lockSummary?.state == CarrierLockState.UNLOCKED) SystemStage.DONE else SystemStage.RESULT
+        }
+    }
+
+    fun unlock() {
+        val current = inspection ?: return
+        val code = verifiedNck ?: return
+        if (stage == SystemStage.UNLOCKING) return
+        scope.launch {
+            stage = SystemStage.UNLOCKING
+            progress = 0
+            message = null
+            moveProgress(28)
+            val result = unlocker.unlock(current, code)
+            moveProgress(72)
             if (result.success) {
-                inspection = inspection?.let { current -> probe.enrich(inspector.inspect(current.snapshot)) }
+                delay(700)
+                lockSummary = runCatching { lockProbe.probe(current) }.getOrNull()
+            }
+            moveProgress(100)
+            val unlocked = lockSummary?.state == CarrierLockState.UNLOCKED
+            if (unlocked) {
+                stage = SystemStage.DONE
+                message = "تم فك القفل. الراوتر جاهز لشريحة أخرى."
+            } else {
+                stage = SystemStage.RESULT
+                message = if (result.success) "تم إرسال رقم الفك، لكن لم يتم تأكيد فتح القفل بعد." else result.message
             }
         }
     }
-
-    LaunchedEffect(Unit) { scan() }
 
     HaiTheme {
         CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -146,71 +220,44 @@ fun HaiManagerApp() {
                     url = url,
                     onClose = {
                         loginUrl = null
-                        scan()
+                        diagnose()
                     }
                 )
                 return@CompositionLocalProvider
             }
 
-            if (confirmReboot) {
-                AlertDialog(
-                    onDismissRequest = { confirmReboot = false },
-                    title = { Text("إعادة تشغيل الراوتر؟") },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            confirmReboot = false
-                            inspection?.let { current -> runAction { actions.reboot(current) } }
-                        }) { Text("إعادة التشغيل") }
+            when (screen) {
+                AppScreen.HOME -> SimpleHomeScreen(
+                    onImei = {
+                        context.startActivity(Intent(context, ImeiUnlockActivity::class.java))
                     },
-                    dismissButton = { TextButton(onClick = { confirmReboot = false }) { Text("إلغاء") } }
-                )
-            }
-
-            Scaffold(
-                contentWindowInsets = WindowInsets.safeDrawing,
-                bottomBar = {
-                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                        AppTab.entries.forEach { item ->
-                            val icon = when (item) {
-                                AppTab.HOME -> Icons.Outlined.Home
-                                AppTab.ROUTER -> Icons.Outlined.Router
-                                AppTab.UPDATES -> Icons.Outlined.SystemUpdate
-                            }
-                            NavigationBarItem(
-                                selected = tab == item,
-                                onClick = { tab = item },
-                                icon = { Icon(icon, contentDescription = null) },
-                                label = { Text(item.title) }
-                            )
-                        }
+                    onSystem = {
+                        resetSystem()
+                        screen = AppScreen.SYSTEM_UNLOCK
                     }
-                }
-            ) { padding ->
-                when (tab) {
-                    AppTab.HOME -> HomeScreen(
-                        context = context,
+                )
+
+                AppScreen.SYSTEM_UNLOCK -> {
+                    BackHandler {
+                        resetSystem()
+                        screen = AppScreen.HOME
+                    }
+                    SystemUnlockScreen(
+                        stage = stage,
+                        progress = progress,
                         router = router,
                         inspection = inspection,
-                        scanning = scanning,
-                        modifier = Modifier.padding(padding),
-                        onScan = ::scan,
+                        lockSummary = lockSummary,
+                        verifiedNck = verifiedNck,
+                        message = message,
+                        onDiagnose = ::diagnose,
                         onLogin = { loginUrl = router?.managementUrl },
-                        onRouter = { tab = AppTab.ROUTER }
+                        onUnlock = ::unlock,
+                        onBack = {
+                            resetSystem()
+                            screen = AppScreen.HOME
+                        }
                     )
-                    AppTab.ROUTER -> RouterScreen(
-                        inspection = inspection,
-                        router = router,
-                        scanning = scanning,
-                        actionBusy = actionBusy,
-                        actionMessage = actionMessage,
-                        modifier = Modifier.padding(padding),
-                        onScan = ::scan,
-                        onLogin = { loginUrl = router?.managementUrl },
-                        onAction = ::runAction,
-                        actions = actions,
-                        onReboot = { confirmReboot = true }
-                    )
-                    AppTab.UPDATES -> UpdatesScreen(context, Modifier.padding(padding))
                 }
             }
         }
@@ -218,306 +265,169 @@ fun HaiManagerApp() {
 }
 
 @Composable
-private fun HomeScreen(
-    context: Context,
+private fun SimpleHomeScreen(
+    onImei: () -> Unit,
+    onSystem: () -> Unit
+) {
+    HaiPage(title = "HAI MANAGER", subtitle = "فك قفل الراوتر") {
+        Text("اختر الطريقة", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        UnlockOptionCard(
+            title = "فك القفل عبر IMEI",
+            subtitle = "أدخل الرقم واحصل على نتيجة الفك",
+            icon = Icons.Outlined.Lock,
+            onClick = onImei
+        )
+        UnlockOptionCard(
+            title = "فك القفل عبر الراوتر",
+            subtitle = "وصّل الراوتر ودع التطبيق يشخّصه",
+            icon = Icons.Outlined.Router,
+            onClick = onSystem
+        )
+    }
+}
+
+@Composable
+private fun UnlockOptionCard(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 118.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(Modifier.size(52.dp), contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SystemUnlockScreen(
+    stage: SystemStage,
+    progress: Int,
     router: RouterSnapshot?,
     inspection: RouterInspection?,
-    scanning: Boolean,
-    modifier: Modifier,
-    onScan: () -> Unit,
+    lockSummary: RouterCarrierLockSummary?,
+    verifiedNck: String?,
+    message: String?,
+    onDiagnose: () -> Unit,
     onLogin: () -> Unit,
-    onRouter: () -> Unit
+    onUnlock: () -> Unit,
+    onBack: () -> Unit
 ) {
-    val connected = router?.connected == true
-    val needsLogin = inspection?.accessStatus == RouterAccessStatus.AUTH_REQUIRED
-    val url = router?.managementUrl
+    val model = inspection?.device?.model ?: router?.model
+    val platform = PlatformResolver.resolve(model)
+    val attemptsZero = lockSummary?.attemptsRemaining?.trim()?.toIntOrNull() == 0
+    val profile = inspection?.firmwareProfileInfo
+    val autoReady = inspection != null &&
+        lockSummary?.state == CarrierLockState.LOCKED &&
+        !attemptsZero &&
+        verifiedNck != null &&
+        profile?.nckEntry?.canWrite == true &&
+        inspection.probeReport?.nckEntryVerified == true
 
-    HaiPage(
-        modifier = modifier,
-        title = "HAI MANAGER",
-        subtitle = "Huawei + ZTE"
-    ) {
-        HaiCard {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        inspection?.device?.model ?: router?.model ?: "الراوتر",
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Text(
-                        when {
-                            scanning -> "جارٍ الفحص…"
-                            !connected -> "غير متصل"
-                            needsLogin -> "يحتاج تسجيل دخول"
-                            inspection?.accessStatus == RouterAccessStatus.AVAILABLE -> "متصل"
-                            else -> router?.brand?.displayName ?: "جاهز للفحص"
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+    HaiPage(title = "فك القفل عبر الراوتر", subtitle = "اتبع الخطوات فقط") {
+        if (stage == SystemStage.READY) {
+            HaiCard {
+                HaiSectionTitle("قبل التشخيص")
+                Text("1. شغّل الراوتر")
+                Text("2. اتصل من الجوال بشبكة Wi‑Fi الخاصة بالراوتر")
+                Text("3. إذا كان الراوتر يوفّر شبكة عبر Type‑C يمكنك استخدامها بدل Wi‑Fi")
+                Button(onClick = onDiagnose, modifier = Modifier.fillMaxWidth()) {
+                    Text("تشخيص")
                 }
-                HaiStatusChip(
-                    text = when {
-                        scanning -> "فحص"
-                        inspection?.accessStatus == RouterAccessStatus.AVAILABLE -> "جاهز"
-                        needsLogin -> "دخول"
-                        connected -> "متصل"
-                        else -> "—"
-                    },
-                    active = inspection?.accessStatus == RouterAccessStatus.AVAILABLE
-                )
             }
+        }
 
-            inspection?.signal?.let { signal ->
-                HorizontalDivider()
+        if (stage == SystemStage.DIAGNOSING || stage == SystemStage.UNLOCKING) {
+            HaiCard {
+                Text(
+                    if (stage == SystemStage.UNLOCKING) "جاري فك القفل" else "جاري التشخيص",
+                    fontWeight = FontWeight.Bold
+                )
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text("$progress%", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        if (stage == SystemStage.RESULT || stage == SystemStage.DONE) {
+            HaiCard {
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    MiniMetric("الشبكة", signal.networkType ?: "—")
-                    MiniMetric("RSRP", signal.rsrp ?: "—")
-                    MiniMetric("SINR", signal.sinr ?: "—")
-                }
-            }
-
-            when {
-                scanning -> CircularProgressIndicator()
-                needsLogin && url != null -> Button(
-                    onClick = onLogin,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
-                ) { Text("تسجيل الدخول") }
-                else -> OutlinedButton(
-                    onClick = onScan,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
-                ) { Text(if (connected) "تحديث الحالة" else "فحص الراوتر") }
-            }
-        }
-
-        val quickActions = mutableListOf<HaiAction>()
-        quickActions += HaiAction("فك الشبكة بالـIMEI", Icons.Outlined.Lock) {
-            val brand = when (inspection?.snapshot?.brand ?: router?.brand) {
-                RouterBrand.HUAWEI -> UnlockBrand.HUAWEI
-                RouterBrand.ZTE -> UnlockBrand.ZTE
-                else -> UnlockBrand.AUTO
-            }
-            context.startActivity(
-                Intent(context, ImeiUnlockActivity::class.java)
-                    .putExtra(ImeiUnlockActivity.EXTRA_IMEI, inspection?.device?.imei)
-                    .putExtra(ImeiUnlockActivity.EXTRA_MODEL, inspection?.device?.model ?: router?.model)
-                    .putExtra(ImeiUnlockActivity.EXTRA_BRAND, brand.name)
-            )
-        }
-
-        if (connected && url != null) {
-            quickActions += listOf(
-                HaiAction("Wi-Fi", Icons.Outlined.Wifi) {
-                    context.startActivity(Intent(context, WifiToolsActivity::class.java).putExtra(WifiToolsActivity.EXTRA_URL, url))
-                },
-                HaiAction("SIM", Icons.Outlined.SimCard) {
-                    context.startActivity(Intent(context, SimToolsActivity::class.java).putExtra(SimToolsActivity.EXTRA_URL, url))
-                },
-                HaiAction("الشبكة", Icons.Outlined.Router, onClick = onRouter),
-                HaiAction("نظام الراوتر", Icons.Outlined.SystemUpdate) {
-                    context.startActivity(Intent(context, FirmwareToolsActivity::class.java))
-                },
-                HaiAction("قفل المشغل", Icons.Outlined.Lock, onClick = onRouter)
-            )
-        }
-
-        HaiActionGrid(quickActions)
-    }
-}
-
-@Composable
-private fun MiniMetric(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.titleMedium)
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
-    }
-}
-
-@Composable
-private fun RouterScreen(
-    inspection: RouterInspection?,
-    router: RouterSnapshot?,
-    scanning: Boolean,
-    actionBusy: Boolean,
-    actionMessage: String?,
-    modifier: Modifier,
-    onScan: () -> Unit,
-    onLogin: () -> Unit,
-    onAction: (suspend () -> RouterActionResult) -> Unit,
-    actions: RouterActionService,
-    onReboot: () -> Unit
-) {
-    var nrBands by remember { mutableStateOf("78") }
-    val current = inspection
-
-    HaiPage(
-        modifier = modifier,
-        title = current?.device?.model ?: router?.model ?: "الراوتر",
-        subtitle = router?.brand?.displayName?.takeIf { it != RouterBrand.UNKNOWN.displayName }
-    ) {
-        if (scanning) {
-            HaiCard { CircularProgressIndicator() }
-            return@HaiPage
-        }
-
-        if (router?.connected != true) {
-            HaiCard {
-                Text("لا يوجد راوتر متصل")
-                Button(onClick = onScan, modifier = Modifier.fillMaxWidth()) { Text("فحص الراوتر") }
-            }
-            return@HaiPage
-        }
-
-        if (current?.accessStatus == RouterAccessStatus.AUTH_REQUIRED) {
-            HaiCard {
-                Text("تسجيل الدخول مطلوب")
-                Button(onClick = onLogin, modifier = Modifier.fillMaxWidth()) { Text("تسجيل الدخول") }
-            }
-            return@HaiPage
-        }
-
-        if (current == null || current.accessStatus != RouterAccessStatus.AVAILABLE) {
-            HaiCard {
-                Text("تعذر قراءة بيانات الراوتر")
-                OutlinedButton(onClick = onScan, modifier = Modifier.fillMaxWidth()) { Text("إعادة الفحص") }
-            }
-            return@HaiPage
-        }
-
-        HaiTwoPane(
-            first = {
-                HaiCard {
-                    HaiSectionTitle("الشبكة")
-                    val signal = current.signal
-                    HaiValueRow("المشغل", signal?.operatorName)
-                    HaiValueRow("النوع", signal?.networkType)
-                    HaiValueRow("RSRP", signal?.rsrp)
-                    HaiValueRow("RSRQ", signal?.rsrq)
-                    HaiValueRow("SINR", signal?.sinr)
-                    HaiValueRow("النطاق", signal?.primaryBand ?: signal?.bands?.joinToString(" + "))
-                    if (signal?.secondaryBands?.isNotEmpty() == true) {
-                        HaiValueRow("CA", signal.secondaryBands.joinToString(" + "))
+                    Text("النتيجة", fontWeight = FontWeight.Bold)
+                    if (stage == SystemStage.DONE) {
+                        Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     }
                 }
-            },
-            second = {
-                HaiCard {
-                    HaiSectionTitle("الجهاز")
-                    HaiValueRow("Firmware", current.device?.firmwareVersion)
-                    HaiValueRow("IMEI", current.device?.imei)
-                    HaiValueRow("Serial", current.device?.serialNumber)
-                    HaiValueRow("Hardware", current.device?.hardwareVersion)
-                }
-            }
-        )
-
-        RouterCarrierLockCard(current)
-
-        val caps = current.capabilities
-        if (RouterCapability.NETWORK_MODE in caps && current.supportedNetworkModes.isNotEmpty()) {
-            HaiCard {
-                HaiSectionTitle("وضع الشبكة")
-                HaiActionGrid(
-                    current.supportedNetworkModes.sortedBy(NetworkMode::ordinal).map { mode ->
-                        HaiAction(mode.displayName, Icons.Outlined.Router, enabled = !actionBusy) {
-                            onAction { actions.setNetworkMode(current, mode) }
-                        }
+                HaiValueRow("الراوتر", model ?: "غير معروف")
+                HaiValueRow("المعالج", platform?.name ?: "غير معروف")
+                HaiValueRow("حالة القفل", lockSummary?.state?.displayName ?: "غير معروف")
+                HaiValueRow("المحاولات", lockSummary?.attemptsRemaining ?: "غير معروف")
+                HaiValueRow(
+                    "الفك التلقائي",
+                    when {
+                        lockSummary?.state == CarrierLockState.UNLOCKED -> "لا يحتاج فك"
+                        autoReady -> "جاهز"
+                        attemptsZero -> "متوقف — المحاولات منتهية"
+                        lockSummary?.state == CarrierLockState.LOCKED -> "غير متاح لهذا الإصدار"
+                        else -> "غير محسوم"
                     }
                 )
+                message?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
-        }
 
-        val bandWritable = current.snapshot.brand == RouterBrand.ZTE && current.firmwareProfileInfo.bandLock.canWrite
-        if (bandWritable) {
-            HaiCard {
-                HaiSectionTitle("قفل 5G")
-                OutlinedTextField(
-                    value = nrBands,
-                    onValueChange = { nrBands = it.filter { ch -> ch.isDigit() || ch == ',' || ch == ' ' || ch == '+' } },
-                    label = { Text("n78 أو 41,78") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Button(
-                    onClick = {
-                        val bands = nrBands.split(',', '+', ' ').mapNotNull { it.trim().toIntOrNull() }
-                        onAction { actions.setZteNrBands(current, bands) }
-                    },
-                    enabled = !actionBusy && nrBands.any(Char::isDigit),
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("تطبيق") }
-            }
-        }
-
-        if (RouterCapability.REBOOT in caps) {
-            OutlinedButton(
-                onClick = onReboot,
-                enabled = !actionBusy,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
-            ) {
-                Icon(Icons.Outlined.RestartAlt, contentDescription = null)
-                Text("  إعادة تشغيل الراوتر")
-            }
-        }
-
-        if (actionBusy) CircularProgressIndicator()
-        actionMessage?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-
-        OutlinedButton(onClick = onScan, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Outlined.Refresh, contentDescription = null)
-            Text("  تحديث")
-        }
-    }
-}
-
-@Composable
-private fun UpdatesScreen(context: Context, modifier: Modifier = Modifier) {
-    val scope = rememberCoroutineScope()
-    var checking by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<UpdateCheckResult?>(null) }
-
-    fun checkNow() {
-        scope.launch {
-            checking = true
-            result = UpdateRepository().check()
-            checking = false
-        }
-    }
-
-    LaunchedEffect(Unit) { checkNow() }
-
-    HaiPage(modifier = modifier, title = "التحديثات") {
-        HaiCard {
-            HaiValueRow("الإصدار", BuildConfig.VERSION_NAME)
-            when {
-                checking -> CircularProgressIndicator()
-                result is UpdateCheckResult.Failure -> Text("تعذر التحقق من التحديث")
-                result is UpdateCheckResult.Success -> {
-                    val update = (result as UpdateCheckResult.Success).update
-                    if (update.available) UpdateAvailableCard(context, update)
-                    else HaiStatusChip("أحدث إصدار")
+            if (inspection?.accessStatus == RouterAccessStatus.AUTH_REQUIRED && router?.managementUrl != null) {
+                Button(onClick = onLogin, modifier = Modifier.fillMaxWidth()) {
+                    Text("تسجيل الدخول للراوتر")
+                }
+            } else if (autoReady) {
+                Button(onClick = onUnlock, modifier = Modifier.fillMaxWidth()) {
+                    Text("فك القفل")
+                }
+            } else if (lockSummary?.state == CarrierLockState.UNLOCKED || stage == SystemStage.DONE) {
+                HaiCard {
+                    Text("الراوتر مفتوح وجاهز لشريحة أخرى.", fontWeight = FontWeight.Bold)
                 }
             }
-            OutlinedButton(onClick = ::checkNow, enabled = !checking, modifier = Modifier.fillMaxWidth()) {
-                Text("فحص التحديث")
+
+            if (stage != SystemStage.DONE) {
+                OutlinedButton(onClick = onDiagnose, modifier = Modifier.fillMaxWidth()) {
+                    Text("إعادة التشخيص")
+                }
             }
         }
-    }
-}
 
-@Composable
-private fun UpdateAvailableCard(context: Context, update: AppUpdate) {
-    Text("الإصدار ${update.versionName} متوفر", style = MaterialTheme.typography.titleMedium)
-    if (update.downloadable) {
-        Button(
-            onClick = { ApkUpdateInstaller.downloadAndInstall(context, update) },
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("تنزيل وتثبيت") }
+        OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+            Text("رجوع")
+        }
     }
 }
