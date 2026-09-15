@@ -11,6 +11,8 @@ data class ModemPlatformProfile(
     val family: String,
     val confidence: PlatformConfidence,
     val models: String,
+    val personalizationProtocol: String,
+    val imeiNckDerivation: String,
     val accessLayers: List<String>,
     val researchProjects: List<String>,
     val note: String
@@ -23,15 +25,24 @@ data class ModemPlatformProfile(
  * correct diagnostic/research path and avoid applying algorithms from an unrelated generation.
  */
 object PlatformResolver {
+    private const val QUALCOMM_PERSONALIZATION =
+        "QMI UIM/DMS depersonalization — DCK/NCK is supplied to the modem; QMI does not derive it from IMEI"
+    private const val QUALCOMM_DERIVATION =
+        "لا توجد خوارزمية IMEI→DCK موثقة لهذه المنصة داخل HAI"
+
     private val sdx55 = ModemPlatformProfile(
         name = "Qualcomm SDX55 / Snapdragon X55",
         family = "QUALCOMM-SDX55",
         confidence = PlatformConfidence.VERIFIED,
         models = "ZTE MC801A / MC7010 / MU5001",
+        personalizationProtocol = QUALCOMM_PERSONALIZATION,
+        imeiNckDerivation = QUALCOMM_DERIVATION,
         accessLayers = listOf("Web API/goform", "AT/QMI/DIAG", "EDL/Sahara/Firehose", "NV/EFS"),
         researchProjects = listOf(
             "nicjac/python-zte-mc801a",
             "stich86/ZTE-MC7010",
+            "linux-mobile-broadband/libqmi",
+            "openwrt/uqmi",
             "bkerler/edl",
             "iamromulan/qfenix",
             "quectel-official/QLog"
@@ -44,8 +55,12 @@ object PlatformResolver {
         family = "QUALCOMM-SDX62",
         confidence = PlatformConfidence.VERIFIED,
         models = "ZTE MC888 / MC888D / MC888 Pro / MU5120",
+        personalizationProtocol = QUALCOMM_PERSONALIZATION,
+        imeiNckDerivation = QUALCOMM_DERIVATION,
         accessLayers = listOf("Web API/goform", "AT/QMI/MBIM", "MHI/PCIe", "DIAG", "EDL when a signed loader is available"),
         researchProjects = listOf(
+            "linux-mobile-broadband/libqmi",
+            "openwrt/uqmi",
             "iamromulan/quectel-rgmii-toolkit",
             "dr-dolomite/QManager-RM520N",
             "snowzach/quectool",
@@ -61,8 +76,12 @@ object PlatformResolver {
         family = "QUALCOMM-SDX65",
         confidence = PlatformConfidence.COMMUNITY,
         models = "ZTE MC888A / MC888A Ultra وبعض SKU من MC888 Ultra/MC889",
+        personalizationProtocol = QUALCOMM_PERSONALIZATION,
+        imeiNckDerivation = QUALCOMM_DERIVATION,
         accessLayers = listOf("Web API/goform", "AT/QMI/MBIM", "MHI/PCIe", "DIAG", "signed-loader EDL where available"),
         researchProjects = listOf(
+            "linux-mobile-broadband/libqmi",
+            "openwrt/uqmi",
             "bkerler/Loaders#82",
             "iamromulan/qfenix",
             "quectel-official/QLog",
@@ -76,10 +95,14 @@ object PlatformResolver {
         family = "QUALCOMM-SDX75",
         confidence = PlatformConfidence.VERIFIED,
         models = "ZTE U60 Pro / MU5250",
+        personalizationProtocol = QUALCOMM_PERSONALIZATION,
+        imeiNckDerivation = QUALCOMM_DERIVATION,
         accessLayers = listOf("OpenWrt/ubus", "device REST services", "AT/QMI/DIAG", "MHI/PCIe", "EDL/Firehose research"),
         researchProjects = listOf(
             "jesther-ai/open-u60-pro",
             "amenekowo/mu5250_tweaking",
+            "linux-mobile-broadband/libqmi",
+            "openwrt/uqmi",
             "iamromulan/quectel-rgmii-toolkit (SDXPINN)",
             "iamromulan/qfenix",
             "qualcomm/qdlrs"
@@ -97,6 +120,8 @@ object PlatformResolver {
         family = family,
         confidence = PlatformConfidence.VERIFIED,
         models = models,
+        personalizationProtocol = "Huawei SIMLOCK/HiLink/NVRAM path varies by firmware generation",
+        imeiNckDerivation = "يُحدد حسب جيل Balong والـFirmware؛ لا تُعمم خوارزميات Legacy على B-series/5G",
         accessLayers = listOf("HiLink/Web API", "AT", "Balong USB/fastboot", "NVRAM/firmware analysis"),
         researchProjects = listOf(
             "Huawei-LTE-routers-mods/README",
@@ -176,10 +201,14 @@ object PlatformResolver {
         family = "QUALCOMM-SDX62-OR-SDX65",
         confidence = PlatformConfidence.VARIANT_DEPENDENT,
         models = model,
+        personalizationProtocol = QUALCOMM_PERSONALIZATION,
+        imeiNckDerivation = QUALCOMM_DERIVATION,
         accessLayers = listOf("Web API/goform", "Hardware/Firmware fingerprint", "AT/QMI/DIAG"),
         researchProjects = listOf(
             "ZTE 4th Gen FWA platform documentation",
             "stich86 community MC888 hardware research",
+            "linux-mobile-broadband/libqmi",
+            "openwrt/uqmi",
             "bkerler/Loaders#82",
             "iamromulan/qfenix"
         ),
