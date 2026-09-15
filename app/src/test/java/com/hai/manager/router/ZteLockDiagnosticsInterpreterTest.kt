@@ -74,4 +74,55 @@ class ZteLockDiagnosticsInterpreterTest {
         assertEquals("42001,42003", result.lockedHplmns)
         assertTrue(result.diagnostic.contains("غير محسومة"))
     }
+
+    @Test
+    fun stcB15WithStcSimRequestsForeignSimInsteadOfGuessing() {
+        val result = ZteLockDiagnosticsInterpreter.interpret(
+            ZteLockRawSnapshot(
+                firmwareVersion = "BD_SASTCMC801AV1.0.0B15",
+                simHomePlmn = "42001",
+                networkProvider = "stc ksa",
+                pppStatus = "ppp_connected",
+                networkType = "LTE-NSA"
+            )
+        )
+
+        assertEquals(CarrierLockState.UNKNOWN, result.state)
+        assertTrue(result.needsForeignSimTest)
+        assertTrue(result.diagnostic.contains("شريحة من مشغل آخر"))
+    }
+
+    @Test
+    fun stcB15ForeignSimConnectedProvesRouterUnlocked() {
+        val result = ZteLockDiagnosticsInterpreter.interpret(
+            ZteLockRawSnapshot(
+                firmwareVersion = "BD_SASTCMC801AV1.0.0B15",
+                simHomePlmn = "42003",
+                networkProvider = "Mobily",
+                servingPlmn = "42003",
+                pppStatus = "ppp_connected",
+                networkType = "LTE"
+            )
+        )
+
+        assertEquals(CarrierLockState.UNLOCKED, result.state)
+        assertFalse(result.needsForeignSimTest)
+        assertTrue(result.diagnostic.contains("شريحة من مشغل آخر"))
+    }
+
+    @Test
+    fun stcB15ForeignSimWaitingForNckProvesLocked() {
+        val result = ZteLockDiagnosticsInterpreter.interpret(
+            ZteLockRawSnapshot(
+                firmwareVersion = "BD_SASTCMC801AV1.0.0B15",
+                simHomePlmn = "42004",
+                networkProvider = "Zain",
+                modemMainState = "modem_imsi_waitnck"
+            )
+        )
+
+        assertEquals(CarrierLockState.LOCKED, result.state)
+        assertFalse(result.needsForeignSimTest)
+        assertTrue(result.waitingForNck)
+    }
 }
