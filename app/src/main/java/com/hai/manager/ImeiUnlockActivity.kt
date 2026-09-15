@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.hai.manager.unlock.ImeiUnlockFacade
 import com.hai.manager.unlock.ImeiUnlockReport
+import com.hai.manager.unlock.PlatformResolver
+import com.hai.manager.unlock.TacResolver
 import com.hai.manager.unlock.UnlockBrand
 import com.hai.manager.unlock.UnlockConfidence
 
@@ -130,6 +132,10 @@ private fun ImeiUnlockScreen(
         }
 
         report?.let { result ->
+            val tacMatch = TacResolver.resolve(result.imei)
+            val resolvedModel = tacMatch?.model ?: modelHint
+            val platform = PlatformResolver.resolve(resolvedModel)
+
             HaiCard {
                 HaiSectionTitle("النتيجة")
                 HaiValueRow("IMEI", result.imei)
@@ -138,6 +144,44 @@ private fun ImeiUnlockScreen(
                 HaiValueRow("الجيل", result.generation.displayName)
                 HaiValueRow("العائلة", result.family)
                 Text(result.warning)
+            }
+
+            if (tacMatch != null) {
+                HaiCard {
+                    HaiSectionTitle("التعرف من IMEI")
+                    HaiValueRow("TAC", tacMatch.tac)
+                    HaiValueRow("الموديل", tacMatch.model)
+                    HaiValueRow("Profile", tacMatch.profile)
+                    HaiValueRow("الجيل المتوقع", tacMatch.generation.displayName)
+                    Text("مصدر المطابقة: ${tacMatch.evidence}")
+                    Text("TAC يحدد عائلة الجهاز فقط ولا يرفع ثقة خوارزمية NCK تلقائيًا.")
+                }
+            } else {
+                HaiCard {
+                    HaiSectionTitle("TAC غير موجود في الكتالوج")
+                    Text("لم يتعرف HAI على أول 8 أرقام من IMEI. يمكنك اختيار الشركة يدويًا، لكن لن يتم اعتبار الموديل موثقًا حتى يضاف TAC إلى القاعدة.")
+                }
+            }
+
+            if (platform != null) {
+                HaiCard {
+                    HaiSectionTitle("منصة المودم")
+                    HaiValueRow("Chipset", platform.name)
+                    HaiValueRow("Platform", platform.family)
+                    HaiValueRow("الثقة", platform.confidence.displayName)
+                    Text(platform.note)
+                    HorizontalDivider()
+                    Text("SIM personalization", fontWeight = FontWeight.SemiBold)
+                    Text(platform.personalizationProtocol)
+                    Text("توليد NCK من IMEI", fontWeight = FontWeight.SemiBold)
+                    Text(platform.imeiNckDerivation)
+                    HorizontalDivider()
+                    Text("طبقات البحث", fontWeight = FontWeight.SemiBold)
+                    Text(platform.accessLayers.joinToString(" • "))
+                    HorizontalDivider()
+                    Text("مشاريع مرجعية", fontWeight = FontWeight.SemiBold)
+                    platform.researchProjects.forEach { Text("• $it") }
+                }
             }
 
             if (result.codes.isNotEmpty()) {
