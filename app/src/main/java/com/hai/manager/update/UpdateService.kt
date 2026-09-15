@@ -21,7 +21,9 @@ import androidx.core.content.ContextCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -40,7 +42,11 @@ import java.util.concurrent.TimeUnit
 
 private const val RELEASE_FEED_URL = "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/update-feed.json"
 private const val LEGACY_FEED_URL = "https://raw.githubusercontent.com/Malik05255/HAI-MANGER/main/update-feed.json"
-private const val UPDATE_CHANNEL = "hai_manager_updates"
+private const val UPDATE_CHANNEL = "hai_manager_updates_v2"
+private const val PERIODIC_UPDATE_WORK = "hai-manager-update-check"
+private const val IMMEDIATE_UPDATE_WORK = "hai-manager-update-check-now"
+private const val UPDATE_PREFS = "hai_update_notifications"
+private const val LAST_NOTIFIED_VERSION = "last_notified_version"
 
 data class AppUpdate(
     val versionCode: Int,
@@ -165,15 +171,34 @@ object UpdateCompatibility {
     }
 }
 
+internal object UpdateNotificationPolicy {
+    fun shouldNotify(installedVersionCode: Int, candidateVersionCode: Int, lastNotifiedVersionCode: Int): Boolean =
+        candidateVersionCode > installedVersionCode && candidateVersionCode > lastNotifiedVersionCode
+}
+
 object UpdateScheduler {
     fun schedule(context: Context) {
+        val appContext = context.applicationContext
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-        val request = PeriodicWorkRequestBuilder<UpdateWorker>(6, TimeUnit.HOURS)
+        val periodic = PeriodicWorkRequestBuilder<UpdateWorker>(15, TimeUnit.MINUTES)
             .setConstraints(constraints)
             .build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            "hai-manager-update-check",
+        WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
+            PERIODIC_UPDATE_WORK,
             ExistingPeriodicWorkPolicy.UPDATE,
+            periodic
+        )
+        checkNow(appContext)
+    }
+
+    fun checkNow(context: Context) {
+        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        val request = OneTimeWorkRequestBuilder<UpdateWorker>()
+            .setConstraints(constraints)
+            .build()
+        WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
+            IMMEDIATE_UPDATE_WORK,
+            ExistingWorkPolicy.REPLACE,
             request
         )
     }
@@ -181,12 +206,24 @@ object UpdateScheduler {
 
 class UpdateWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
-        DeviceCatalogRepository(applicationContext).sync()
-        when (val result = UpdateRepository().check()) {
-            is UpdateCheckResult.Success -> if (result.update.available) UpdateNotifications.show(applicationContext, result.update)
-            is UpdateCheckResult.Failure -> Unit
+        // Device catalog failure must never prevent checking the app update feed.
+        runCatching { DeviceCatalogRepository(applicationContext).sync() }
+        return when (val result = UpdateRepository().check()) {
+            is UpdateCheckResult.Success -> {
+                if (result.update.available) UpdateNotifications.show(applicationContext, result.update)
+                Result.success()
+            }
+            is UpdateCheckResult.Failure -> Result.retry()
         }
-        return Result.success()
+    }
+}
+
+class UpdateRescheduleReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            UpdateNotifications.createChannel(context)
+            UpdateScheduler.schedule(context)
+        }
     }
 }
 
@@ -195,54 +232,71 @@ object UpdateNotifications {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(
-                NotificationChannel(UPDATE_CHANNEL, "تحديثات HAI MANAGER", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                    description = "تنبيهات الإصدارات الجديدة وقاعدة الأجهزة"
+                NotificationChannel(UPDATE_CHANNEL, "تحديثات HAI MANAGER", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "إشعار عند توفر إصدار جديد من HAI MANAGER"
+                    enableVibration(true)
+                    setShowBadge(true)
                 }
             )
         }
     }
 
+    fun notificationsEnabled(context: Context): Boolean {
+        val permissionGranted = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!permissionGranted) return false
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        return manager.areNotificationsEnabled()
+    }
+
     fun show(context: Context, update: AppUpdate) {
         createChannel(context)
-        if (!canNotify(context)) return
+        if (!notificationsEnabled(context)) return
+
+        val prefs = context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
+        val lastNotified = prefs.getInt(LAST_NOTIFIED_VERSION, 0)
+        if (!UpdateNotificationPolicy.shouldNotify(BuildConfig.VERSION_CODE, update.versionCode, lastNotified)) return
+
         val pending = PendingIntent.getActivity(
             context,
             10,
-            Intent(context, MainActivity::class.java),
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val text = when {
-            !update.signatureStable -> "الإصدار ${update.versionName} موجود، لكنه غير موقع بمفتاح التحديث الثابت"
-            else -> "الإصدار ${update.versionName} جاهز للتنزيل والتثبيت فوق النسخة الحالية"
+            !update.signatureStable -> "الإصدار ${update.versionName} متوفر، لكنه غير جاهز للتثبيت الآمن بعد"
+            else -> "الإصدار ${update.versionName} جاهز. اضغط لفتح HAI MANAGER والتحديث"
         }
         val notification = NotificationCompat.Builder(context, UPDATE_CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle("تحديث جديد لـ HAI MANAGER")
+            .setContentTitle("يتوفر تحديث جديد لـ HAI MANAGER")
             .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(pending)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setAutoCancel(true)
             .build()
         (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(2001, notification)
+        prefs.edit().putInt(LAST_NOTIFIED_VERSION, update.versionCode).apply()
     }
 
     fun showInstallError(context: Context, message: String) {
         createChannel(context)
-        if (!canNotify(context)) return
+        if (!notificationsEnabled(context)) return
         val notification = NotificationCompat.Builder(context, UPDATE_CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setContentTitle("تعذر تثبيت تحديث HAI MANAGER")
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .build()
         (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(2002, notification)
     }
-
-    private fun canNotify(context: Context): Boolean =
-        Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.POST_NOTIFICATIONS
-        ) == PackageManager.PERMISSION_GRANTED
 }
 
 object ApkUpdateInstaller {
