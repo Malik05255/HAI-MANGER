@@ -10,6 +10,24 @@
 4. لا ينتج HAI كود NCK من IMEI لجيل حديث إلا عند وجود خوارزمية مثبتة لنفس المنصة.
 5. اسم المنتج وحده لا يكفي إذا كان نفس الاسم يباع بأكثر من chipset/SKU.
 
+## Qualcomm SIM personalization — نتيجة مهمة
+
+مشاريع `linux-mobile-broadband/libqmi` و`openwrt/uqmi` تثبت أن بروتوكول Qualcomm نفسه يدعم personalization/depersonalization:
+
+- قراءة حالة SIM/personalization.
+- تنفيذ Depersonalization عند توفير DCK/NCK الصحيح.
+- إرجاع عدد محاولات التحقق/فك الحظر في الرسائل ذات الصلة.
+
+هذا يثبت **مسار إدخال الكود** ولا يثبت **مصدر الكود**. QMI يستقبل DCK/NCK كقيمة خارجية ولا توجد في هذه الواجهات خوارزمية IMEI→DCK. لذلك يفصل HAI بين:
+
+`Personalization protocol = supported/observable`
+
+و
+
+`IMEI-only DCK derivation = unverified for modern SDX generations`
+
+هذا الفصل مهم جدًا لـMC801A/MC888: العثور على QMI depersonalization لا يعني أن الكود يمكن حسابه من IMEI وحده.
+
 ---
 
 ## Qualcomm SDX55 / Snapdragon X55
@@ -20,6 +38,8 @@
 - مشاريع مرجعية:
   - `nicjac/python-zte-mc801a` — تسجيل الدخول والـgoform والـtelemetry الخاصة بالـMC801A.
   - `tpoechtrager/ZTE-Web-Script` وMC801A scripts — أوامر ZTE المخفية وAD/action seed.
+  - `linux-mobile-broadband/libqmi` — QMI DMS/UIM personalization/depersonalization protocol.
+  - `openwrt/uqmi` — حالة UIM وpersonalization ضمن OpenWrt QMI stack.
   - `bkerler/edl` — Qualcomm Sahara/Firehose/DIAG كمرجع منخفض المستوى.
   - `iamromulan/qfenix` — GPT/NV/EFS/device detection لعائلة Qualcomm.
 
@@ -33,7 +53,7 @@
 - نستخدمه كمرجع إضافي لسلوك ZTE MBB على نفس الجيل.
 
 ### قرار HAI
-`SDX55 = goform -> diagnostics -> QMI/DIAG research -> EDL only for recovery/research`
+`SDX55 = goform -> personalization diagnostics -> QMI/DIAG research -> EDL only for recovery/research`
 
 ---
 
@@ -47,6 +67,7 @@
 - X62 موثق من ZTE.
 
 ### مشاريع مرجعية
+- `linux-mobile-broadband/libqmi` و`openwrt/uqmi` — personalization/depersonalization وحالة UIM.
 - `iamromulan/quectel-rgmii-toolkit` — RM520N/RM521F، MHI/RGMII وLinux AP على منصات Qualcomm الحديثة.
 - `dr-dolomite/QManager-RM520N` — إدارة كاملة لـRM520N عبر internal Linux/CGI.
 - `snowzach/quectool` — AT/QENG/QCAINFO/bands/cell lock abstraction لعائلة RM520/RM521.
@@ -55,7 +76,7 @@
 - `iamromulan/qfenix` — منصة عامة للـNV/EFS/GPT/EDL.
 
 ### قرار HAI
-لا نفترض أن وجود Qualcomm EDL يعني إمكانية الكتابة. Secure Boot والـsigned loader جزء من Profile الجهاز.
+لا نفترض أن وجود Qualcomm EDL يعني إمكانية الكتابة. Secure Boot والـsigned loader جزء من Profile الجهاز. كما أن وجود QMI depersonalization لا يعني وجود IMEI-only NCK generator.
 
 ---
 
@@ -69,6 +90,7 @@
 - يجب استخدام Hardware version / firmware family / diagnostic fingerprint قبل تثبيت SDX62 أو SDX65.
 
 ### مشاريع مرجعية
+- `linux-mobile-broadband/libqmi` و`openwrt/uqmi` — personalization protocol مستقل عن جيل SDX المحدد.
 - `bkerler/Loaders#82` — loaders لـSIMCom SDX65 وأبحاث secure boot.
 - `quectel-official/QLog` — يدعم SDX65 في PCIe/MHI logging.
 - `iamromulan/qfenix` — تعريف أجهزة Qualcomm وعمليات NV/EFS/GPT.
@@ -87,6 +109,7 @@
 ### مشاريع مرجعية
 - `jesther-ai/open-u60-pro` — أهم مشروع: ZTE MU5250، OpenWrt/ZWRT، أكثر من 100 endpoint، config backup/decryption وmobile companions.
 - `amenekowo/mu5250_tweaking` — ملاحظات عملية على debug mode وOpenWrt الداخلي.
+- `linux-mobile-broadband/libqmi` و`openwrt/uqmi` — مرجع personalization/QMI.
 - `iamromulan/quectel-rgmii-toolkit` — فرع SDXPINN لـRM550/RM551.
 - `iamromulan/qfenix` — SDX75 ضمن قاعدة Qualcomm device detection.
 - `qualcomm/qdlrs` — تنفيذ رسمي مفتوح المصدر لـSahara/Firehose في Rust.
