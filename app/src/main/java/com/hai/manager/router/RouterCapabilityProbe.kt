@@ -60,7 +60,7 @@ class RouterCapabilityProbeService {
                     "wa_inner_version,cr_version,RD,BearerPreference,current_network_mode," +
                     "lte_band_lock,lte_band_mask,lte_band,wan_active_band," +
                     "nr5g_band_mask,nr5g_band,nr5g_action_band,network_lock_status,network_lock," +
-                    "network_unlock_remain_count,unlock_nck_time,wifiEnabled,SSID1&multi_data=1"
+                    "network_unlock_remain_count,unlock_nck_time,modem_main_state,wifiEnabled,SSID1&multi_data=1"
             )
         }.getOrNull()
         val json = response?.body?.let { runCatching { JSONObject(it) }.getOrNull() }
@@ -95,11 +95,15 @@ class RouterCapabilityProbeService {
         val nrList = nrRaw?.let(::parseSimpleBandList).orEmpty()
         val lockState = value("network_lock_status", "network_lock")
         val lockAttempts = value("network_unlock_remain_count")
+        val modemMainState = value("modem_main_state")
+        val waitingForNck = modemMainState?.contains("waitnck", ignoreCase = true) == true
         val wifiVisible = value("wifiEnabled") != null || value("SSID1") != null
-        val lockReadable = lockState != null || lockAttempts != null
-        val lockDetail = listOfNotNull(lockState, lockAttempts?.let { "محاولات: $it" })
-            .joinToString(" • ")
-            .takeIf { it.isNotBlank() }
+        val lockReadable = lockState != null || lockAttempts != null || waitingForNck
+        val lockDetail = listOfNotNull(
+            lockState,
+            lockAttempts?.let { "محاولات: $it" },
+            modemMainState?.takeIf { waitingForNck }?.let { "modem=$it" }
+        ).joinToString(" • ").takeIf { it.isNotBlank() }
 
         val model = inspection.device?.model ?: inspection.snapshot.model
         val nckEvidencePath = if (ZteNckRuntime.isMc801a(model)) {
@@ -107,7 +111,11 @@ class RouterCapabilityProbeService {
         } else {
             null
         }
-        val nckEntryVerified = !authRequired && actionSeedReady && lockReadable && nckEvidencePath != null
+
+        // This flag describes the NCK write transport only. Whether the router is actually locked
+        // is proved separately by explicit lock fields or modem_imsi_waitnck. Some MC801A B15
+        // builds expose UNLOCK_NETWORK but intentionally hide network_lock_status/retry fields.
+        val nckEntryVerified = !authRequired && actionSeedReady && nckEvidencePath != null
         val nckItem = when {
             authRequired -> CapabilityProbeItem(
                 "nck_write",
@@ -119,13 +127,13 @@ class RouterCapabilityProbeService {
                 "nck_write",
                 "إدخال NCK",
                 CapabilityProbeStatus.AVAILABLE,
-                "WebUI يعلن UNLOCK_NETWORK عبر $nckEvidencePath"
+                "WebUI يعلن UNLOCK_NETWORK عبر $nckEvidencePath؛ التنفيذ لا يُسمح إلا بعد إثبات القفل"
             )
             nckEvidencePath != null -> CapabilityProbeItem(
                 "nck_write",
                 "إدخال NCK",
                 CapabilityProbeStatus.NOT_EXPOSED,
-                "نموذج الفك موجود لكن بيانات الجلسة أو حالة القفل غير مكتملة"
+                "نموذج الفك موجود لكن مفتاح أمر ZTE غير جاهز لهذا Firmware"
             )
             else -> CapabilityProbeItem(
                 "nck_write",
@@ -141,6 +149,12 @@ class RouterCapabilityProbeService {
             item("lte_band_state", "قراءة حالة LTE Band", lteRaw != null, lteRaw),
             item("nr_band_state", "قراءة حالة NR Band", nrRaw != null, nrRaw),
             item("network_lock_read", "قراءة Network Lock", lockReadable, lockDetail),
+            item(
+                "modem_waitnck",
+                "حالة انتظار NCK",
+                waitingForNck,
+                modemMainState?.takeIf { waitingForNck }
+            ),
             item("wifi_read", "قراءة Wi-Fi", wifiVisible),
             nckItem
         )

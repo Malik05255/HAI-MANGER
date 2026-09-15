@@ -13,8 +13,8 @@ android {
         applicationId = "com.hai.manager"
         minSdk = 26
         targetSdk = 37
-        versionCode = 36
-        versionName = "0.28.0"
+        versionCode = 37
+        versionName = "0.29.0"
     }
 
     val releaseKeystore = System.getenv("HAI_KEYSTORE_PATH")

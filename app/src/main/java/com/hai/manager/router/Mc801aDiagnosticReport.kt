@@ -7,6 +7,7 @@ enum class Mc801aNckReadiness(val displayName: String) {
     ATTEMPTS_EXHAUSTED("المحاولات منتهية"),
     PROBE_INCOMPLETE("التشخيص غير مكتمل"),
     ACTION_SEED_NOT_READY("مفتاح الأوامر غير جاهز"),
+    INSERT_OTHER_SIM("ركّب شريحة من شركة أخرى ثم أعد التشخيص"),
     LOCK_STATE_NOT_READABLE("حالة القفل غير قابلة للقراءة"),
     WEBUI_PATH_NOT_FOUND("مسار NCK غير مثبت في WebUI"),
     READY_FOR_NCK("جاهز لإدخال NCK")
@@ -61,6 +62,7 @@ object Mc801aDiagnosticReporter {
         val nckWrite = report.item("nck_write")
         val attempts = lockSummary?.attemptsRemaining ?: inspection.security?.unlockAttemptsRemaining
         val lockState = lockSummary?.state ?: decodeFallbackLock(inspection.security?.networkLockState)
+        val waitingForNck = lockSummary?.waitingForNck == true
 
         val readiness = when {
             !applicable -> Mc801aNckReadiness.NOT_APPLICABLE
@@ -69,10 +71,12 @@ object Mc801aDiagnosticReporter {
             attempts?.trim()?.toIntOrNull() == 0 -> Mc801aNckReadiness.ATTEMPTS_EXHAUSTED
             report == null -> Mc801aNckReadiness.PROBE_INCOMPLETE
             actionSeed?.status != CapabilityProbeStatus.AVAILABLE -> Mc801aNckReadiness.ACTION_SEED_NOT_READY
-            !report.networkLockReadable || networkLock?.status != CapabilityProbeStatus.AVAILABLE ->
-                Mc801aNckReadiness.LOCK_STATE_NOT_READABLE
             !report.nckEntryVerified || nckWrite?.status != CapabilityProbeStatus.AVAILABLE ->
                 Mc801aNckReadiness.WEBUI_PATH_NOT_FOUND
+            lockState == CarrierLockState.UNKNOWN && !waitingForNck ->
+                Mc801aNckReadiness.INSERT_OTHER_SIM
+            lockState != CarrierLockState.LOCKED ->
+                Mc801aNckReadiness.LOCK_STATE_NOT_READABLE
             else -> Mc801aNckReadiness.READY_FOR_NCK
         }
 
@@ -85,7 +89,7 @@ object Mc801aDiagnosticReporter {
             firmwareFingerprint = report?.firmwareFingerprint ?: "غير متوفر",
             lockState = lockState,
             attemptsRemaining = attempts,
-            waitingForNck = lockSummary?.waitingForNck == true,
+            waitingForNck = waitingForNck,
             actionSeedStatus = actionSeed?.status,
             networkLockStatus = networkLock?.status,
             nckWriteStatus = nckWrite?.status,
