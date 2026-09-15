@@ -78,6 +78,9 @@ jobs:
           jarsigner -verify .signing/check/check.jar >/dev/null
           rm -rf .signing/check
 
+      - name: Run unit tests
+        run: gradle :app:testDebugUnitTest --stacktrace
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
@@ -119,7 +122,7 @@ jobs:
             "versionCode": $VERSION_CODE,
             "versionName": "$VERSION_NAME",
             "apkUrl": "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/HAI-MANAGER.apk",
-            "notes": "Huawei وZTE: Firmware Profile Engine، توسيع Band Lock لـ ZTE 5G عبر preflight آمن، وإظهار حالة NCK كموثق/قراءة فقط حسب Model + Firmware.",
+            "notes": "IMEI Unlock Lab: Huawei V1/V2/V201/Flash، ZTE ZX297520V3، وتصنيف آمن للأجيال الحديثة 4G/5G بدون أكواد تخمينية.",
             "mandatory": false,
             "signatureStable": true,
             "signingCertSha256": "$EXPECTED_SIGNING_CERT_SHA256",
