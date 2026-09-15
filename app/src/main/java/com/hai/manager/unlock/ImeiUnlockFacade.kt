@@ -9,13 +9,34 @@ object ImeiUnlockFacade {
     ): ImeiUnlockReport {
         val imei = rawImei.filter(Char::isDigit).take(15)
         val tac = TacResolver.resolve(imei)
+
+        if (tac != null && brandHint != UnlockBrand.AUTO && brandHint != tac.brand) {
+            return ImeiUnlockEngine.analyze(imei, tac.brand, tac.model).copy(
+                brand = tac.brand,
+                generation = tac.generation,
+                family = "تعارض في تعريف الجهاز",
+                codes = emptyList(),
+                warning = "TAC ${tac.tac} يطابق ${tac.brand.displayName} ${tac.model} لكن الشركة المختارة مختلفة. تم منع توليد أي كود حتى تصحيح الاختيار.",
+                sourceNotes = listOf(
+                    "TAC ${tac.tac} → ${tac.brand.displayName} ${tac.model} (${tac.evidence}).",
+                    "Profile: ${tac.profile}."
+                )
+            )
+        }
+
         val resolvedBrand = when {
-            brandHint != UnlockBrand.AUTO -> brandHint
             tac != null -> tac.brand
+            brandHint != UnlockBrand.AUTO -> brandHint
             else -> UnlockBrand.AUTO
         }
-        val resolvedModel = modelHint?.takeIf { it.isNotBlank() } ?: tac?.model
+        val resolvedModel = tac?.model ?: modelHint?.takeIf { it.isNotBlank() }
         var report = ImeiUnlockEngine.analyze(imei, resolvedBrand, resolvedModel)
+
+        // A known router TAC is stronger evidence than a generic brand calculator. The TAC profile
+        // can only restrict generation; it never upgrades an unverified algorithm to "verified".
+        if (tac != null) {
+            report = applyTacProfile(report, tac)
+        }
 
         if (resolvedBrand == UnlockBrand.HUAWEI && resolvedModel.isNullOrBlank() && report.codes.isNotEmpty()) {
             report = report.copy(
@@ -45,5 +66,45 @@ object ImeiUnlockFacade {
                 "Profile: ${tac.profile}."
             ) + report.sourceNotes
         )
+    }
+
+    private fun applyTacProfile(report: ImeiUnlockReport, tac: TacDevice): ImeiUnlockReport = when (tac.profile) {
+        "HUAWEI-BALONG-4G-V4-AWARE" -> report.copy(
+            brand = UnlockBrand.HUAWEI,
+            generation = UnlockGeneration.FOUR_G_HILINK,
+            family = "Huawei ${tac.model} — Balong 4G / V4-aware",
+            codes = emptyList(),
+            warning = "TAC معروف لهذه العائلة. يتم منع أكواد Legacy التلقائية لأن نسخًا من ${tac.model} تستخدم قفل V4/firmware-dependent. يلزم تحديد الـFirmware ومسار AT/HiLink قبل أي NCK."
+        )
+
+        "HUAWEI-HILINK-RUNTIME" -> report.copy(
+            brand = UnlockBrand.HUAWEI,
+            generation = tac.generation,
+            family = "Huawei ${tac.model} — HiLink/Balong",
+            codes = emptyList(),
+            warning = if (tac.generation == UnlockGeneration.FIVE_G) {
+                "تم التعرف على ${tac.model} من TAC. لا توجد خوارزمية IMEI→NCK موثقة لهذه المنصة؛ يدعم HAI التعرف والتشخيص فقط."
+            } else {
+                "تم التعرف على ${tac.model} من TAC. لا يتم تعميم V1/V2/V201 على هذا الـCPE دون توثيق جيل القفل والـFirmware."
+            }
+        )
+
+        "ZTE-4G-GOFORM-READ" -> report.copy(
+            brand = UnlockBrand.ZTE,
+            generation = UnlockGeneration.FOUR_G_HILINK,
+            family = "ZTE ${tac.model} — 4G goform",
+            codes = emptyList(),
+            warning = "تم التعرف على ${tac.model} من TAC. هذه العائلة لا تُعامل كـZX297520V3؛ يستخدم HAI goform/firmware diagnostics ولا يولد NCK تجريبيًا."
+        )
+
+        "ZTE-5G-GOFORM-RUNTIME" -> report.copy(
+            brand = UnlockBrand.ZTE,
+            generation = UnlockGeneration.FIVE_G,
+            family = "ZTE ${tac.model} — Qualcomm 5G / goform",
+            codes = emptyList(),
+            warning = "تم التعرف على ${tac.model} من TAC. IMEI-only NCK غير مثبت لهذه المنصة؛ يستخدم HAI حالة SIM Lock وعداد NCK والـFirmware لتحديد المسار."
+        )
+
+        else -> report
     }
 }
