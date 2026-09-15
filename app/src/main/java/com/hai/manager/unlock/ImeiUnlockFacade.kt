@@ -29,6 +29,15 @@ object ImeiUnlockFacade {
             )
         }
 
+        val normalizedModel = resolvedModel.orEmpty().uppercase()
+        if (resolvedBrand == UnlockBrand.HUAWEI && listOf("B310", "B311", "B315").any(normalizedModel::startsWith)) {
+            report = report.copy(
+                family = "Huawei B310/B311/B315 — Balong 4G / V4-aware",
+                codes = emptyList(),
+                warning = "هذه العائلة قد تستخدم قفل Huawei V4 يعتمد على الـFirmware وAT/hash. لا يعرض HAI أكواد V1/V2/V201 ككود فك نهائي لها. عند الاتصال بالراوتر تُستخدم حالة SIM Lock والـFirmware لتحديد المسار الصحيح."
+            )
+        }
+
         if (tac == null) return report
         return report.copy(
             sourceNotes = listOf(
