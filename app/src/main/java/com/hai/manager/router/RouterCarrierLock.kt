@@ -25,6 +25,7 @@ data class RouterCarrierLockSummary(
     val innerVersion: String? = null,
     val webVersion: String? = null,
     val nckRelatedValue: String? = null,
+    val requiresForeignSimTest: Boolean = false,
     val diagnostic: String? = null
 )
 
@@ -85,7 +86,7 @@ class RouterCarrierLockProbeService {
                 "/goform/goform_get_cmd_process?isTest=false&cmd=" +
                     "network_lock_status,network_lock,lock_status,network_unlock_remain_count," +
                     "unlock_nck_time,locked_hplmns,modem_main_state,network_provider,imei," +
-                    "wa_inner_version,web_version&multi_data=1"
+                    "wa_inner_version,web_version,imsi,rmcc,rmnc,ppp_status,network_type&multi_data=1"
             )
         }.getOrNull()
         val json = response?.body?.let { runCatching { JSONObject(it) }.getOrNull() }
@@ -95,6 +96,16 @@ class RouterCarrierLockProbeService {
             ?.trim()
             ?.takeIf(::meaningfulLockValue)
 
+        val rmcc = value("rmcc")?.filter(Char::isDigit)
+        val rmnc = value("rmnc")?.filter(Char::isDigit)
+        val servingPlmn = if (!rmcc.isNullOrBlank() && !rmnc.isNullOrBlank()) "$rmcc$rmnc" else null
+        val simHomePlmn = value("imsi")
+            ?.filter(Char::isDigit)
+            ?.takeIf { it.length >= 5 }
+            ?.take(5)
+
+        // The full IMSI is deliberately not retained in the diagnostic model. Only the first
+        // MCC/MNC digits are used in-memory to tell whether a foreign SIM is being tested.
         val rawSnapshot = ZteLockRawSnapshot(
             networkLockStatus = value("network_lock_status"),
             networkLock = value("network_lock"),
@@ -106,7 +117,12 @@ class RouterCarrierLockProbeService {
             networkProvider = value("network_provider"),
             imei = value("imei"),
             innerVersion = value("wa_inner_version"),
-            webVersion = value("web_version")
+            webVersion = value("web_version"),
+            firmwareVersion = inspection.device?.firmwareVersion,
+            simHomePlmn = simHomePlmn,
+            servingPlmn = servingPlmn,
+            pppStatus = value("ppp_status"),
+            networkType = value("network_type")
         )
         val interpreted = ZteLockDiagnosticsInterpreter.interpret(rawSnapshot)
         val fallbackRaw = inspection.security?.networkLockState
@@ -130,6 +146,7 @@ class RouterCarrierLockProbeService {
             innerVersion = rawSnapshot.innerVersion,
             webVersion = rawSnapshot.webVersion,
             nckRelatedValue = interpreted.nckRelatedValue,
+            requiresForeignSimTest = interpreted.needsForeignSimTest && state == CarrierLockState.UNKNOWN,
             diagnostic = interpreted.diagnostic
         )
     }

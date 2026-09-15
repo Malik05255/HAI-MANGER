@@ -398,19 +398,23 @@ private fun SystemUnlockScreen(
     val attemptsZero = lockSummary?.attemptsRemaining?.trim()?.toIntOrNull() == 0
     val profile = inspection?.firmwareProfileInfo
     val runtimeReady = inspection != null && profile?.nckEntry?.canWrite == true && inspection.probeReport?.nckEntryVerified == true
+    val routePotential = profile?.nckEntry?.canWrite == true
     val locked = lockSummary?.state == CarrierLockState.LOCKED
     val unlocked = lockSummary?.state == CarrierLockState.UNLOCKED || stage == SystemStage.DONE
+    val needsForeignSimTest = lockSummary?.requiresForeignSimTest == true
     val canUnlock = locked && runtimeReady && !attemptsZero
     val lockText = when {
         unlocked -> "مفكوك"
         locked -> "مقفل"
-        else -> "غير معروف"
+        needsForeignSimTest -> "بدّل الشريحة للتأكد"
+        else -> "غير محسوم"
     }
     val unlockableText = when {
         unlocked -> "لا يحتاج فك"
-        canUnlock -> "نعم"
-        locked -> "لا"
-        else -> "غير معروف"
+        attemptsZero -> "لا"
+        runtimeReady -> "نعم"
+        routePotential -> "بعد التحقق"
+        else -> "لا"
     }
 
     HaiPage(title = "فك القفل عبر الراوتر", subtitle = "تشخيص بسيط ثم فك القفل") {
@@ -450,6 +454,13 @@ private fun SystemUnlockScreen(
                 HaiValueRow("حالة القفل", lockText)
                 HaiValueRow("قابل للفك", unlockableText)
                 message?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+
+            if (needsForeignSimTest) {
+                HaiCard {
+                    Text("للتأكد من حالة القفل: ركّب شريحة Mobily أو Zain ثم اضغط إعادة التشخيص.", fontWeight = FontWeight.SemiBold)
+                    Text("التشخيص لا ينفذ فك القفل.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
 
             if (inspection?.accessStatus == RouterAccessStatus.AUTH_REQUIRED && router?.managementUrl != null) {
