@@ -18,6 +18,7 @@ import com.hai.manager.router.RouterBrand
 import com.hai.manager.router.RouterCarrierLockProbeService
 import com.hai.manager.router.RouterCarrierLockSummary
 import com.hai.manager.router.RouterInspection
+import com.hai.manager.unlock.ConnectedLockState
 import com.hai.manager.unlock.UnlockBrand
 
 @Composable
@@ -63,16 +64,28 @@ fun RouterCarrierLockCard(inspection: RouterInspection) {
                     RouterBrand.ZTE -> UnlockBrand.ZTE
                     else -> UnlockBrand.AUTO
                 }
+                val lockState = when (summary?.state) {
+                    CarrierLockState.UNLOCKED -> ConnectedLockState.UNLOCKED
+                    CarrierLockState.LOCKED -> ConnectedLockState.LOCKED
+                    else -> ConnectedLockState.UNKNOWN
+                }
                 context.startActivity(
                     Intent(context, ImeiUnlockActivity::class.java)
                         .putExtra(ImeiUnlockActivity.EXTRA_IMEI, inspection.device?.imei)
                         .putExtra(ImeiUnlockActivity.EXTRA_MODEL, inspection.device?.model)
                         .putExtra(ImeiUnlockActivity.EXTRA_BRAND, brand.name)
+                        .putExtra(ImeiUnlockActivity.EXTRA_CONNECTED, true)
+                        .putExtra(ImeiUnlockActivity.EXTRA_LOCK_STATE, lockState.name)
+                        .putExtra(ImeiUnlockActivity.EXTRA_ATTEMPTS, summary?.attemptsRemaining)
+                        .putExtra(ImeiUnlockActivity.EXTRA_FIRMWARE, inspection.device?.firmwareVersion)
+                        .putExtra(ImeiUnlockActivity.EXTRA_OPERATOR, summary?.currentOperator)
+                        .putExtra(ImeiUnlockActivity.EXTRA_LOCK_SOURCE, summary?.source)
                 )
             },
+            enabled = !loading,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("تحليل IMEI واستخراج كود الفك")
+            Text("فتح مركز فك وتشخيص القفل")
         }
     }
 }

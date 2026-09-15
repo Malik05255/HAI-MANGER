@@ -28,6 +28,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.hai.manager.unlock.ConnectedLockState
+import com.hai.manager.unlock.ConnectedUnlockContext
 import com.hai.manager.unlock.ImeiUnlockFacade
 import com.hai.manager.unlock.ImeiUnlockReport
 import com.hai.manager.unlock.PlatformResolver
@@ -44,6 +46,17 @@ class ImeiUnlockActivity : ComponentActivity() {
         val brand = intent.getStringExtra(EXTRA_BRAND)
             ?.let { runCatching { UnlockBrand.valueOf(it) }.getOrNull() }
             ?: UnlockBrand.AUTO
+        val connectedContext = if (intent.getBooleanExtra(EXTRA_CONNECTED, false)) {
+            ConnectedUnlockContext(
+                state = intent.getStringExtra(EXTRA_LOCK_STATE)
+                    ?.let { runCatching { ConnectedLockState.valueOf(it) }.getOrNull() }
+                    ?: ConnectedLockState.UNKNOWN,
+                attemptsRemaining = intent.getStringExtra(EXTRA_ATTEMPTS),
+                firmware = intent.getStringExtra(EXTRA_FIRMWARE),
+                currentOperator = intent.getStringExtra(EXTRA_OPERATOR),
+                source = intent.getStringExtra(EXTRA_LOCK_SOURCE)
+            )
+        } else null
 
         setContent {
             HaiTheme {
@@ -52,6 +65,7 @@ class ImeiUnlockActivity : ComponentActivity() {
                         initialImei = initialImei,
                         initialBrand = brand,
                         modelHint = model,
+                        connectedContext = connectedContext,
                         onClose = { finish() }
                     )
                 }
@@ -63,6 +77,12 @@ class ImeiUnlockActivity : ComponentActivity() {
         const val EXTRA_IMEI = "unlock_imei"
         const val EXTRA_MODEL = "unlock_model"
         const val EXTRA_BRAND = "unlock_brand"
+        const val EXTRA_CONNECTED = "unlock_connected"
+        const val EXTRA_LOCK_STATE = "unlock_lock_state"
+        const val EXTRA_ATTEMPTS = "unlock_attempts"
+        const val EXTRA_FIRMWARE = "unlock_firmware"
+        const val EXTRA_OPERATOR = "unlock_operator"
+        const val EXTRA_LOCK_SOURCE = "unlock_lock_source"
     }
 }
 
@@ -71,17 +91,39 @@ private fun ImeiUnlockScreen(
     initialImei: String,
     initialBrand: UnlockBrand,
     modelHint: String?,
+    connectedContext: ConnectedUnlockContext?,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
-    var imei by remember { mutableStateOf(initialImei.filter(Char::isDigit).take(15)) }
+    val normalizedInitialImei = initialImei.filter(Char::isDigit).take(15)
+    var imei by remember { mutableStateOf(normalizedInitialImei) }
     var brand by remember { mutableStateOf(initialBrand) }
-    var report by remember { mutableStateOf<ImeiUnlockReport?>(null) }
+    var report by remember(normalizedInitialImei, initialBrand, modelHint, connectedContext) {
+        mutableStateOf(
+            if (connectedContext != null && normalizedInitialImei.length == 15) {
+                ImeiUnlockFacade.analyze(normalizedInitialImei, initialBrand, modelHint)
+            } else null
+        )
+    }
 
     HaiPage(
         title = "فك قفل الشبكة",
-        subtitle = "IMEI Unlock Lab — Huawei + ZTE"
+        subtitle = if (connectedContext != null) "تشخيص مباشر — Huawei + ZTE" else "IMEI Unlock Lab — Huawei + ZTE"
     ) {
+        if (connectedContext != null) {
+            HaiCard {
+                HaiSectionTitle("الراوتر المتصل")
+                HaiValueRow("حالة القفل", connectedContext.state.displayName)
+                HaiValueRow("المحاولات المتبقية", connectedContext.attemptsRemaining ?: "غير مكشوف")
+                connectedContext.firmware?.takeIf { it.isNotBlank() }?.let { HaiValueRow("Firmware", it) }
+                connectedContext.currentOperator?.takeIf { it.isNotBlank() }?.let { HaiValueRow("الشبكة الحالية", it) }
+                connectedContext.source?.takeIf { it.isNotBlank() }?.let { Text("المصدر: $it") }
+                if (connectedContext.attemptsExhausted) {
+                    Text("عداد NCK الظاهر = 0. يمنع HAI اعتبار إدخال الكود خطوة متاحة.", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+
         HaiCard {
             HaiSectionTitle("IMEI")
             OutlinedTextField(
@@ -128,7 +170,7 @@ private fun ImeiUnlockScreen(
                 enabled = imei.length == 15,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("تحليل واستخراج الكود")
+                Text(if (connectedContext != null) "إعادة التحليل" else "تحليل واستخراج الكود")
             }
         }
 
@@ -136,7 +178,9 @@ private fun ImeiUnlockScreen(
             val tacMatch = TacResolver.resolve(result.imei)
             val resolvedModel = tacMatch?.model ?: modelHint
             val platform = PlatformResolver.resolve(resolvedModel)
-            val strategy = UnlockStrategyPlanner.plan(result, platform, resolvedModel)
+            val strategy = UnlockStrategyPlanner.plan(result, platform, resolvedModel, connectedContext)
+            val codeEntryBlocked = connectedContext?.state == ConnectedLockState.UNLOCKED ||
+                connectedContext?.attemptsExhausted == true
 
             HaiCard {
                 HaiSectionTitle("النتيجة")
@@ -201,8 +245,19 @@ private fun ImeiUnlockScreen(
                         Text(candidate.code, fontWeight = FontWeight.Bold)
                         Text(candidate.family)
                         Text(candidate.note)
+                        if (codeEntryBlocked) {
+                            Text(
+                                if (connectedContext?.state == ConnectedLockState.UNLOCKED) {
+                                    "الجهاز غير مقفل؛ لا حاجة لاستخدام هذا الكود."
+                                } else {
+                                    "عداد المحاولات منتهٍ؛ لا تدخل أو تنسخ الكود للاستخدام على الجهاز قبل معالجة حالة العداد."
+                                },
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                         OutlinedButton(
                             onClick = { copyCode(context, candidate.code) },
+                            enabled = !codeEntryBlocked,
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("نسخ الكود") }
                     }
@@ -210,7 +265,7 @@ private fun ImeiUnlockScreen(
             } else {
                 HaiCard {
                     HaiSectionTitle("لا يوجد مولد موثّق لهذا الجيل")
-                    Text("لن يعرض HAI كودًا تخمينيًا قد يستهلك محاولات NCK. إذا كان الراوتر متصلًا، استخدم تشخيص قفل المشغل والـFirmware Profile لتحديد المسار الصحيح.")
+                    Text("لن يعرض HAI كودًا تخمينيًا قد يستهلك محاولات NCK. إذا كان الراوتر متصلًا، يستخدم HAI حالة القفل والـFirmware Profile لتحديد المسار الصحيح.")
                 }
             }
 
