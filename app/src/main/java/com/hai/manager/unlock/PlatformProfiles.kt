@@ -29,6 +29,10 @@ object PlatformResolver {
         "QMI UIM/DMS depersonalization — DCK/NCK is supplied to the modem; QMI does not derive it from IMEI"
     private const val QUALCOMM_DERIVATION =
         "لا توجد خوارزمية IMEI→DCK موثقة لهذه المنصة داخل HAI"
+    private const val MEDIATEK_PERSONALIZATION =
+        "MediaTek SIMLOCK is modem/NVRAM-backed; documented MTK generations store lock-related data in protected NVRAM areas, but exact CPE layout is firmware-specific"
+    private const val MEDIATEK_DERIVATION =
+        "لا توجد خوارزمية IMEI→NCK موثقة لـT750/T830 داخل HAI؛ قراءة NVRAM لا تعني أن الكود مشتق من IMEI"
 
     private val sdx55 = ModemPlatformProfile(
         name = "Qualcomm SDX55 / Snapdragon X55",
@@ -110,6 +114,49 @@ object PlatformResolver {
         note = "الجيل الأحدث. open-u60-pro يعطي مرجعًا مباشرًا لبنية ZTE/ZWRT وواجهات الجهاز الحديثة."
     )
 
+    private val mediatekT750 = ModemPlatformProfile(
+        name = "MediaTek T750 / MT6890",
+        family = "MEDIATEK-T750-MT6890",
+        confidence = PlatformConfidence.VERIFIED,
+        models = "Reference CPEs: Zyxel NR5103/NR5103E/FWA505, Tozed ZLT-X28",
+        personalizationProtocol = MEDIATEK_PERSONALIZATION,
+        imeiNckDerivation = MEDIATEK_DERIVATION,
+        accessLayers = listOf(
+            "WebUI / vendor service",
+            "AT / modem diagnostics",
+            "MediaTek preloader/BROM + Download Agent",
+            "PMT/NAND or GPT/eMMC depending on board",
+            "NVRAM / nvdata / protect partitions"
+        ),
+        researchProjects = listOf(
+            "mt6890-cpe-recovery/mt6890-cpe-recovery",
+            "safuapy/zlt-x28-unbrick",
+            "bkerler/mtkclient"
+        ),
+        note = "T750 يتضمن MT6890 5G SoC رسميًا. أجهزة MT6890 تختلف في NAND/eMMC وتقسيم PMT/GPT، لذلك لا تُعمم ملفات الاستعادة أو DA بين الموديلات."
+    )
+
+    private val mediatekT830 = ModemPlatformProfile(
+        name = "MediaTek T830 / M80 5G modem",
+        family = "MEDIATEK-T830-M80",
+        confidence = PlatformConfidence.VERIFIED,
+        models = "MediaTek T830 CPE platform",
+        personalizationProtocol = MEDIATEK_PERSONALIZATION,
+        imeiNckDerivation = MEDIATEK_DERIVATION,
+        accessLayers = listOf(
+            "Vendor WebUI/API",
+            "AT / modem diagnostics when exposed",
+            "MediaTek boot/preloader research",
+            "NVRAM identity/SIMLOCK research"
+        ),
+        researchProjects = listOf(
+            "bkerler/mtkclient",
+            "bkerler/mtkclient#251 (T830 / MC8512 research)",
+            "MediaTek T830/M80 platform documentation"
+        ),
+        note = "T830 منصة CPE رسمية مدمج فيها مودم M80 (Release 16). دعم أدوات MT6890/T750 لا يعني دعم T830 تلقائيًا."
+    )
+
     private fun balong(
         name: String,
         family: String,
@@ -184,6 +231,10 @@ object PlatformResolver {
 
             value.startsWith("MU5250") || value.contains("U60 PRO") -> sdx75
 
+            value.startsWith("MC8512") -> variantMc8512(value)
+            value.contains("T830") -> mediatekT830
+            value.startsWith("ZLT-X28") || value.startsWith("NR5103") || value.startsWith("FWA505") -> mediatekT750
+
             value.startsWith("B310") || value.startsWith("B315") || value.startsWith("E3372H") ||
                 value.startsWith("E8372H") || value.startsWith("E5573") || value.startsWith("E5576") -> balongV7R11
             value.startsWith("B316") || value.startsWith("B525") || value.startsWith("B528") ||
@@ -213,5 +264,26 @@ object PlatformResolver {
             "iamromulan/qfenix"
         ),
         note = "اسم المنتج وحده غير كافٍ لبعض Ultra/MC889 SKU. HAI يجب أن يثبت المنصة من HW/Firmware قبل اختيار مسار منخفض المستوى."
+    )
+
+    private fun variantMc8512(model: String) = ModemPlatformProfile(
+        name = "ZTE MC8512 — MediaTek T830 candidate / market-dependent G5 family",
+        family = "ZTE-MC8512-PLATFORM-VARIANT",
+        confidence = PlatformConfidence.VARIANT_DEPENDENT,
+        models = model,
+        personalizationProtocol = MEDIATEK_PERSONALIZATION,
+        imeiNckDerivation = MEDIATEK_DERIVATION,
+        accessLayers = listOf(
+            "ZTE WebUI/API fingerprint",
+            "Hardware/Firmware fingerprint",
+            "MediaTek modem/boot diagnostics only after chipset confirmation",
+            "NVRAM research after backup"
+        ),
+        researchProjects = listOf(
+            "bkerler/mtkclient#251 — MC8512/T830 compatibility research",
+            "MediaTek T830/M80 documentation",
+            "ZTE MC8512 support identifiers"
+        ),
+        note = "لا يثبت HAI T830 من اسم G5 Ultra وحده. إعلان ZTE المبكر لـG5 Ultra استخدم Qualcomm X75، بينما أبحاث MC8512 السوقية تشير إلى T830؛ يجب إثبات HW/Firmware أولًا."
     )
 }
