@@ -1,6 +1,7 @@
 package com.hai.manager.unlock
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -45,5 +46,51 @@ class UnlockStrategyPlannerTest {
 
         assertEquals(UnlockPathStatus.READY, plan.steps.first().status)
         assertEquals("IMEI → NCK", plan.steps.first().title)
+    }
+
+    @Test
+    fun connectedLockedRouterPrependsLiveDiagnosis() {
+        val report = ImeiUnlockEngine.analyze("868757025499999", UnlockBrand.ZTE, "MC801A")
+        val platform = PlatformResolver.resolve("MC801A")
+        val connected = ConnectedUnlockContext(
+            state = ConnectedLockState.LOCKED,
+            attemptsRemaining = "5",
+            firmware = "MC801A_TEST",
+            source = "ZTE WebUI network lock diagnostics"
+        )
+        val plan = UnlockStrategyPlanner.plan(report, platform, "MC801A", connected)
+
+        assertEquals("تشخيص الراوتر المتصل", plan.steps.first().title)
+        assertTrue(plan.summary.contains("المحاولات الظاهرة: 5"))
+        assertTrue(plan.summary.contains("MC801A_TEST"))
+    }
+
+    @Test
+    fun exhaustedAttemptsNeverKeepNckAsReady() {
+        val report = ImeiUnlockEngine.analyze("868757025499999", UnlockBrand.HUAWEI, "E173")
+        val connected = ConnectedUnlockContext(
+            state = ConnectedLockState.LOCKED,
+            attemptsRemaining = "0"
+        )
+        val plan = UnlockStrategyPlanner.plan(report, null, "E173", connected)
+
+        assertTrue(plan.title.contains("المحاولات منتهية"))
+        assertEquals(UnlockPathStatus.UNAVAILABLE, plan.steps.first().status)
+        assertFalse(plan.steps.any { it.title.contains("NCK") && it.status == UnlockPathStatus.READY })
+    }
+
+    @Test
+    fun unlockedConnectedRouterStopsUnlockPath() {
+        val report = ImeiUnlockEngine.analyze("868757025499999", UnlockBrand.HUAWEI, "E173")
+        val connected = ConnectedUnlockContext(
+            state = ConnectedLockState.UNLOCKED,
+            attemptsRemaining = "10"
+        )
+        val plan = UnlockStrategyPlanner.plan(report, null, "E173", connected)
+
+        assertTrue(plan.title.contains("لا يحتاج فك"))
+        assertEquals(UnlockPathStatus.READY, plan.steps.first().status)
+        assertEquals(UnlockPathStatus.UNAVAILABLE, plan.steps.last().status)
+        assertTrue(plan.steps.none { it.title.contains("IMEI → NCK") })
     }
 }
