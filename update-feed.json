@@ -1,13 +1,13 @@
 {
-  "versionCode": 34,
-  "versionName": "0.26.0",
+  "versionCode": 35,
+  "versionName": "0.27.0",
   "apkUrl": "https://github.com/Malik05255/HAI-MANGER/releases/download/beta/HAI-MANAGER.apk",
   "notes": "IMEI Unlock Lab: Huawei V1/V2/V201/Flash، ZTE ZX297520V3، وتصنيف آمن للأجيال الحديثة 4G/5G بدون أكواد تخمينية.",
   "mandatory": false,
   "signatureStable": true,
   "signingCertSha256": "D59B0F985ED8CF4A903938B7904A5F33EDA01E8817E994B6A20D78D164BC2441",
-  "sha256": "5E905CF7628C5E112191BBE871BE4D434519F2FB6C0CE16A9309B6E87B5F4896",
+  "sha256": "E2DDDED1210EC2190741DF733F290F28342B10699E12822179BE9EAEDCE1852C",
   "channel": "beta",
-  "publishedAt": "2026-09-15T12:06:40Z",
+  "publishedAt": "2026-09-15T12:49:35Z",
   "catalogVersion": 13
 }
