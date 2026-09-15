@@ -2,6 +2,7 @@ package com.hai.manager.router
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FirmwareProfilesTest {
@@ -30,11 +31,28 @@ class FirmwareProfilesTest {
     }
 
     @Test
-    fun mc801aUsesModernZte5gProfile() {
+    fun mc801aUsesRuntimeGatedNckProfile() {
         val profile = RouterFirmwareProfiles.resolve(
             brand = RouterBrand.ZTE,
             model = "MC801A",
             firmware = "BD_SASTCMC801AV1.0.0B07",
+            capabilities = setOf(RouterCapability.DEVICE_INFO)
+        )
+        assertEquals("ZTE-MC801A-GOFORM-RUNTIME", profile.profileId)
+        assertEquals(ProfileActionSupport.RUNTIME_PROBE, profile.nckEntry)
+        assertTrue(profile.nckEntry.canWrite)
+        assertEquals(
+            setOf("zte_action_seed", "network_lock_read", "nck_write"),
+            profile.actionProbes[RouterWriteOperation.NCK_ENTRY]
+        )
+    }
+
+    @Test
+    fun otherZte5gProfilesStayReadOnlyForNck() {
+        val profile = RouterFirmwareProfiles.resolve(
+            brand = RouterBrand.ZTE,
+            model = "MC888",
+            firmware = "CR_MC888V1.0.0B01",
             capabilities = setOf(RouterCapability.DEVICE_INFO)
         )
         assertEquals("ZTE-5G-GOFORM-RUNTIME", profile.profileId)

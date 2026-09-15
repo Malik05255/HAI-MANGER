@@ -84,32 +84,65 @@ class RouterCapabilityProbeService {
             return CapabilityProbeItem(id, label, status, detail)
         }
 
-        val actionSeedReady = listOf(value("wa_inner_version"), value("cr_version"), value("RD")).all { it != null }
+        val wa = value("wa_inner_version")
+        val cr = value("cr_version")
+        val rd = value("RD")
+        val actionSeedReady = wa != null && rd != null && ZteNckRuntime.computeAd(wa, cr, rd) != null
         val networkMode = value("BearerPreference", "current_network_mode")
         val lteRaw = value("lte_band_lock", "lte_band_mask", "lte_band", "wan_active_band")
         val lteList = lteRaw?.let(::parseSimpleBandList).orEmpty()
         val nrRaw = value("nr5g_band_mask", "nr5g_band", "nr5g_action_band")
         val nrList = nrRaw?.let(::parseSimpleBandList).orEmpty()
         val lockState = value("network_lock_status", "network_lock")
-        val lockAttempts = value("network_unlock_remain_count", "unlock_nck_time")
+        val lockAttempts = value("network_unlock_remain_count")
         val wifiVisible = value("wifiEnabled") != null || value("SSID1") != null
+        val lockReadable = lockState != null || lockAttempts != null
         val lockDetail = listOfNotNull(lockState, lockAttempts?.let { "محاولات: $it" })
             .joinToString(" • ")
             .takeIf { it.isNotBlank() }
 
+        val model = inspection.device?.model ?: inspection.snapshot.model
+        val nckEvidencePath = if (ZteNckRuntime.isMc801a(model)) {
+            probeZteNckWebUi(client)
+        } else {
+            null
+        }
+        val nckEntryVerified = !authRequired && actionSeedReady && lockReadable && nckEvidencePath != null
+        val nckItem = when {
+            authRequired -> CapabilityProbeItem(
+                "nck_write",
+                "إدخال NCK",
+                CapabilityProbeStatus.AUTH_REQUIRED,
+                "سجّل الدخول أولًا"
+            )
+            nckEntryVerified -> CapabilityProbeItem(
+                "nck_write",
+                "إدخال NCK",
+                CapabilityProbeStatus.AVAILABLE,
+                "WebUI يعلن UNLOCK_NETWORK عبر $nckEvidencePath"
+            )
+            nckEvidencePath != null -> CapabilityProbeItem(
+                "nck_write",
+                "إدخال NCK",
+                CapabilityProbeStatus.NOT_EXPOSED,
+                "نموذج الفك موجود لكن بيانات الجلسة أو حالة القفل غير مكتملة"
+            )
+            else -> CapabilityProbeItem(
+                "nck_write",
+                "إدخال NCK",
+                CapabilityProbeStatus.NOT_EXPOSED,
+                "لم يجد HAI نموذج UNLOCK_NETWORK في WebUI لهذا Firmware"
+            )
+        }
+
         val items = listOf(
-            item("zte_action_seed", "مفتاح أوامر ZTE", actionSeedReady, if (actionSeedReady) "wa/cr/RD متاحة" else null),
+            item("zte_action_seed", "مفتاح أوامر ZTE", actionSeedReady, if (actionSeedReady) "AD قابل للاشتقاق" else null),
             item("network_mode_read", "قراءة وضع الشبكة", networkMode != null, networkMode),
             item("lte_band_state", "قراءة حالة LTE Band", lteRaw != null, lteRaw),
             item("nr_band_state", "قراءة حالة NR Band", nrRaw != null, nrRaw),
-            item("network_lock_read", "قراءة Network Lock", lockState != null || lockAttempts != null, lockDetail),
+            item("network_lock_read", "قراءة Network Lock", lockReadable, lockDetail),
             item("wifi_read", "قراءة Wi-Fi", wifiVisible),
-            CapabilityProbeItem(
-                id = "nck_write",
-                label = "إدخال NCK",
-                status = CapabilityProbeStatus.NOT_EXPOSED,
-                detail = "لا يوجد endpoint كتابة موثق في Profile الحالي"
-            )
+            nckItem
         )
 
         val ambiguousLte = lteRaw != null && lteList.isEmpty()
@@ -128,10 +161,19 @@ class RouterCapabilityProbeService {
                     else -> null
                 }
             ),
-            networkLockReadable = lockState != null || lockAttempts != null,
-            nckEntryVerified = false,
+            networkLockReadable = lockReadable,
+            nckEntryVerified = nckEntryVerified,
             summary = summary(items)
         )
+    }
+
+    private suspend fun probeZteNckWebUi(client: RouterHttpClient): String? {
+        for (path in ZteNckRuntime.webUiCandidatePaths) {
+            val response = runCatching { client.get(path) }.getOrNull() ?: continue
+            if (!response.successful) continue
+            if (ZteNckRuntime.exposesUnlockNetwork(response.body)) return path
+        }
+        return null
     }
 
     private suspend fun probeHuawei(client: RouterHttpClient, inspection: RouterInspection): RouterCapabilityReport = coroutineScope {
