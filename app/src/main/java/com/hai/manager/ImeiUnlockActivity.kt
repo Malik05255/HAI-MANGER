@@ -54,7 +54,13 @@ class ImeiUnlockActivity : ComponentActivity() {
                 attemptsRemaining = intent.getStringExtra(EXTRA_ATTEMPTS),
                 firmware = intent.getStringExtra(EXTRA_FIRMWARE),
                 currentOperator = intent.getStringExtra(EXTRA_OPERATOR),
-                source = intent.getStringExtra(EXTRA_LOCK_SOURCE)
+                source = intent.getStringExtra(EXTRA_LOCK_SOURCE),
+                modemState = intent.getStringExtra(EXTRA_MODEM_STATE),
+                waitingForNck = intent.getBooleanExtra(EXTRA_WAITING_NCK, false),
+                lockedHplmns = intent.getStringExtra(EXTRA_LOCKED_HPLMNS),
+                nckRelatedValue = intent.getStringExtra(EXTRA_NCK_RAW),
+                webVersion = intent.getStringExtra(EXTRA_WEB_VERSION),
+                diagnostic = intent.getStringExtra(EXTRA_DIAGNOSTIC)
             )
         } else null
 
@@ -83,6 +89,12 @@ class ImeiUnlockActivity : ComponentActivity() {
         const val EXTRA_FIRMWARE = "unlock_firmware"
         const val EXTRA_OPERATOR = "unlock_operator"
         const val EXTRA_LOCK_SOURCE = "unlock_lock_source"
+        const val EXTRA_MODEM_STATE = "unlock_modem_state"
+        const val EXTRA_WAITING_NCK = "unlock_waiting_nck"
+        const val EXTRA_LOCKED_HPLMNS = "unlock_locked_hplmns"
+        const val EXTRA_NCK_RAW = "unlock_nck_raw"
+        const val EXTRA_WEB_VERSION = "unlock_web_version"
+        const val EXTRA_DIAGNOSTIC = "unlock_diagnostic"
     }
 }
 
@@ -116,10 +128,21 @@ private fun ImeiUnlockScreen(
                 HaiValueRow("حالة القفل", connectedContext.state.displayName)
                 HaiValueRow("المحاولات المتبقية", connectedContext.attemptsRemaining ?: "غير مكشوف")
                 connectedContext.firmware?.takeIf { it.isNotBlank() }?.let { HaiValueRow("Firmware", it) }
+                connectedContext.webVersion?.takeIf { it.isNotBlank() }?.let { HaiValueRow("WebUI", it) }
                 connectedContext.currentOperator?.takeIf { it.isNotBlank() }?.let { HaiValueRow("الشبكة الحالية", it) }
+                connectedContext.modemState?.takeIf { it.isNotBlank() }?.let { HaiValueRow("حالة المودم", it) }
+                connectedContext.lockedHplmns?.takeIf { it.isNotBlank() }?.let { HaiValueRow("Locked HPLMN", it) }
+                connectedContext.nckRelatedValue?.takeIf { it.isNotBlank() }?.let { HaiValueRow("قيمة NCK الخام", it) }
+                if (connectedContext.waitingForNck) {
+                    Text("المودم يعلن حالة انتظار NCK.", fontWeight = FontWeight.SemiBold)
+                }
+                connectedContext.diagnostic?.takeIf { it.isNotBlank() }?.let { Text(it, fontWeight = FontWeight.SemiBold) }
                 connectedContext.source?.takeIf { it.isNotBlank() }?.let { Text("المصدر: $it") }
                 if (connectedContext.attemptsExhausted) {
-                    Text("عداد NCK الظاهر = 0. يمنع HAI اعتبار إدخال الكود خطوة متاحة.", fontWeight = FontWeight.SemiBold)
+                    Text("عداد NCK الصريح = 0. يمنع HAI اعتبار إدخال الكود خطوة متاحة.", fontWeight = FontWeight.SemiBold)
+                }
+                if (connectedContext.nckRelatedValue != null && connectedContext.attemptsRemaining == null) {
+                    Text("قيمة unlock_nck_time ليست مصنفة كعدد محاولات؛ لن يستخدمها HAI لحظر أو السماح بإدخال الكود.")
                 }
             }
         }
