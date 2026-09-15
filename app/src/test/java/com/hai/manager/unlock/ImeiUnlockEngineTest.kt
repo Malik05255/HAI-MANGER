@@ -39,6 +39,25 @@ class ImeiUnlockEngineTest {
     }
 
     @Test
+    fun b310TacSelectsHuaweiBalongProfileInsteadOfLegacyCodes() {
+        val report = ImeiUnlockFacade.analyze("869465040000000")
+        assertEquals(UnlockBrand.HUAWEI, report.brand)
+        assertEquals(UnlockGeneration.FOUR_G_HILINK, report.generation)
+        assertTrue(report.family.contains("Huawei"))
+        assertTrue(report.codes.isEmpty())
+        assertTrue(report.sourceNotes.any { it.contains("B310s-22") })
+    }
+
+    @Test
+    fun mc888TacSelectsZte5gProfile() {
+        val report = ImeiUnlockFacade.analyze("866949060000000")
+        assertEquals(UnlockBrand.ZTE, report.brand)
+        assertEquals(UnlockGeneration.FIVE_G, report.generation)
+        assertTrue(report.codes.isEmpty())
+        assertTrue(report.sourceNotes.any { it.contains("MC888") })
+    }
+
+    @Test
     fun zteZxFamilyCalculatorIsDeterministic() {
         val first = ZteZx297520v3Algorithm.calculate("123456789012345")
         val second = ZteZx297520v3Algorithm.calculate("123456789012345")
