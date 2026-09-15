@@ -34,6 +34,7 @@ import com.hai.manager.unlock.PlatformResolver
 import com.hai.manager.unlock.TacResolver
 import com.hai.manager.unlock.UnlockBrand
 import com.hai.manager.unlock.UnlockConfidence
+import com.hai.manager.unlock.UnlockStrategyPlanner
 
 class ImeiUnlockActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -135,6 +136,7 @@ private fun ImeiUnlockScreen(
             val tacMatch = TacResolver.resolve(result.imei)
             val resolvedModel = tacMatch?.model ?: modelHint
             val platform = PlatformResolver.resolve(resolvedModel)
+            val strategy = UnlockStrategyPlanner.plan(result, platform, resolvedModel)
 
             HaiCard {
                 HaiSectionTitle("النتيجة")
@@ -183,6 +185,8 @@ private fun ImeiUnlockScreen(
                     platform.researchProjects.forEach { Text("• $it") }
                 }
             }
+
+            UnlockStrategyCard(strategy)
 
             if (result.codes.isNotEmpty()) {
                 result.codes.forEach { candidate ->
