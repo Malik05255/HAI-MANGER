@@ -1,10 +1,13 @@
 package com.hai.manager
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -46,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.hai.manager.router.CarrierLockState
+import com.hai.manager.router.Mc801aDiagnosticReporter
 import com.hai.manager.router.RouterAccessStatus
 import com.hai.manager.router.RouterBrand
 import com.hai.manager.router.RouterCarrierLockProbeService
@@ -216,6 +220,15 @@ fun HaiManagerApp() {
         }
     }
 
+    fun copyMc801aDiagnostic() {
+        val current = inspection ?: return
+        val report = Mc801aDiagnosticReporter.build(current, lockSummary)
+        if (!report.applicable) return
+        val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return
+        clipboard.setPrimaryClip(ClipData.newPlainText("HAI MC801A diagnostic", report.shareText()))
+        Toast.makeText(context, "تم نسخ التقرير بدون بيانات حساسة", Toast.LENGTH_SHORT).show()
+    }
+
     HaiTheme {
         CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl) {
             loginUrl?.let { url ->
@@ -258,6 +271,7 @@ fun HaiManagerApp() {
                         onDiagnose = ::diagnose,
                         onLogin = { loginUrl = router?.managementUrl },
                         onUnlock = ::unlock,
+                        onCopyMc801aDiagnostic = ::copyMc801aDiagnostic,
                         onBack = {
                             resetSystem()
                             screen = AppScreen.HOME
@@ -343,6 +357,7 @@ private fun SystemUnlockScreen(
     onDiagnose: () -> Unit,
     onLogin: () -> Unit,
     onUnlock: () -> Unit,
+    onCopyMc801aDiagnostic: () -> Unit,
     onBack: () -> Unit
 ) {
     val model = inspection?.device?.model ?: router?.model
@@ -364,6 +379,9 @@ private fun SystemUnlockScreen(
         !attemptsZero &&
         effectiveNckAvailable &&
         runtimeNckReady
+    val mc801aReport = inspection
+        ?.let { Mc801aDiagnosticReporter.build(it, lockSummary) }
+        ?.takeIf { it.applicable }
 
     HaiPage(title = "فك القفل عبر الراوتر", subtitle = "اتبع الخطوات فقط") {
         if (stage == SystemStage.READY) {
@@ -420,6 +438,30 @@ private fun SystemUnlockScreen(
                     }
                 )
                 message?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+
+            mc801aReport?.let { report ->
+                HaiCard {
+                    HaiSectionTitle("تشخيص MC801A")
+                    HaiValueRow("Firmware", report.firmware)
+                    HaiValueRow("Hardware", report.hardware)
+                    HaiValueRow("WebUI", report.webUi)
+                    HaiValueRow("بصمة النظام", report.firmwareFingerprint)
+                    HaiValueRow("مفتاح أوامر ZTE", report.actionSeedStatus?.displayName ?: "غير متوفر")
+                    HaiValueRow("قراءة Network Lock", report.networkLockStatus?.displayName ?: "غير متوفر")
+                    HaiValueRow("مسار إدخال NCK", report.nckWriteStatus?.displayName ?: "غير متوفر")
+                    HaiValueRow("الجاهزية", report.readiness.displayName)
+                    report.nckEvidence?.let {
+                        Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(
+                        "تقرير النسخ يستبعد IMEI وSerial وICCID وIMSI وSSID ومفاتيح AD/RD.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(onClick = onCopyMc801aDiagnostic, modifier = Modifier.fillMaxWidth()) {
+                        Text("نسخ تقرير التشخيص")
+                    }
+                }
             }
 
             if (inspection?.accessStatus == RouterAccessStatus.AUTH_REQUIRED && router?.managementUrl != null) {
