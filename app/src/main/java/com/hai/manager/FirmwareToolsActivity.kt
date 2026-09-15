@@ -1,8 +1,11 @@
 package com.hai.manager
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.AlertDialog
@@ -31,6 +34,8 @@ import com.hai.manager.catalog.DeviceCatalogRepository
 import com.hai.manager.router.FirmwareCandidate
 import com.hai.manager.router.FirmwareFinding
 import com.hai.manager.router.FirmwareSearchSource
+import com.hai.manager.router.LocalFirmwareSelection
+import com.hai.manager.router.LocalFirmwareService
 import com.hai.manager.router.RouterCapabilityProbeService
 import com.hai.manager.router.RouterDiscoveryService
 import com.hai.manager.router.RouterFirmwareService
@@ -58,6 +63,12 @@ private enum class FirmwareRelation(val label: String) {
     DIFFERENT("إصدار مختلف")
 }
 
+private enum class FirmwareUiSource {
+    OFFICIAL,
+    COMPANIES,
+    LOCAL_FILE
+}
+
 @Composable
 private fun FirmwareToolsScreen(onClose: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -66,13 +77,15 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
     val inspector = remember { RouterInspectorService() }
     val capabilityProbe = remember { RouterCapabilityProbeService() }
     val firmware = remember { RouterFirmwareService() }
+    val localFirmware = remember { LocalFirmwareService(context.applicationContext) }
     val catalog = remember { DeviceCatalogRepository(context.applicationContext) }
 
     var loading by remember { mutableStateOf(true) }
     var inspection by remember { mutableStateOf<RouterInspection?>(null) }
-    var selectedSource by remember { mutableStateOf(FirmwareSearchSource.OFFICIAL) }
+    var selectedSource by remember { mutableStateOf(FirmwareUiSource.OFFICIAL) }
     var candidate by remember { mutableStateOf<FirmwareCandidate?>(null) }
     var findings by remember { mutableStateOf<List<FirmwareFinding>>(emptyList()) }
+    var localSelection by remember { mutableStateOf<LocalFirmwareSelection?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
 
     var searching by remember { mutableStateOf(false) }
@@ -94,27 +107,38 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
         loading = false
     }
 
-    fun chooseSource(source: FirmwareSearchSource) {
-        if (searching || installing) return
-        selectedSource = source
+    fun clearResults() {
         candidate = null
         findings = emptyList()
+        localSelection = null
         message = null
         searchProgress = 0
         searchStage = ""
     }
 
+    fun chooseSource(source: FirmwareUiSource) {
+        if (searching || installing) return
+        selectedSource = source
+        clearResults()
+    }
+
     fun searchUpdates() {
         val current = inspection ?: return
+        val engineSource = when (selectedSource) {
+            FirmwareUiSource.OFFICIAL -> FirmwareSearchSource.OFFICIAL
+            FirmwareUiSource.COMPANIES -> FirmwareSearchSource.COMPANIES
+            FirmwareUiSource.LOCAL_FILE -> return
+        }
         scope.launch {
             searching = true
             candidate = null
             findings = emptyList()
+            localSelection = null
             message = null
             searchProgress = 0
             searchStage = "بدء البحث"
 
-            val catalogJson = if (selectedSource == FirmwareSearchSource.COMPANIES) {
+            val catalogJson = if (engineSource == FirmwareSearchSource.COMPANIES) {
                 searchStage = "تحديث قاعدة المصادر"
                 searchProgress = 5
                 catalog.sync()
@@ -123,7 +147,7 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
                 catalog.firmwareJson()
             }
 
-            val result = firmware.search(current, selectedSource, catalogJson) { progress, stage ->
+            val result = firmware.search(current, engineSource, catalogJson) { progress, stage ->
                 searchProgress = maxOf(searchProgress, progress.coerceIn(0, 100))
                 searchStage = stage
             }
@@ -142,12 +166,53 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
             message = null
             installProgress = 0
             installStage = "بدء التحقق"
-            val result = firmware.execute(current, update) { progress, stage ->
-                installProgress = maxOf(installProgress, progress.coerceIn(0, 100))
-                installStage = stage
+            val result = if (selectedSource == FirmwareUiSource.LOCAL_FILE && localSelection != null) {
+                localFirmware.execute(current, localSelection!!) { progress, stage ->
+                    installProgress = maxOf(installProgress, progress.coerceIn(0, 100))
+                    installStage = stage
+                }
+            } else {
+                firmware.execute(current, update) { progress, stage ->
+                    installProgress = maxOf(installProgress, progress.coerceIn(0, 100))
+                    installStage = stage
+                }
             }
             message = result.message
             installing = false
+        }
+    }
+
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            inspection?.let { current ->
+                scope.launch {
+                    selectedSource = FirmwareUiSource.LOCAL_FILE
+                    searching = true
+                    candidate = null
+                    findings = emptyList()
+                    localSelection = null
+                    message = null
+                    searchProgress = 0
+                    searchStage = "قراءة الملف"
+                    val result = runCatching {
+                        localFirmware.prepare(current, catalog.firmwareJson(), uri) { progress, stage ->
+                            searchProgress = maxOf(searchProgress, progress.coerceIn(0, 100))
+                            searchStage = stage
+                        }
+                    }
+                    result.onSuccess { selection ->
+                        localSelection = selection
+                        candidate = selection.candidate
+                        message = selection.statusMessage
+                    }.onFailure { error ->
+                        message = error.message ?: "تعذر فحص ملف الـFirmware"
+                    }
+                    searching = false
+                }
+            }
         }
     }
 
@@ -156,14 +221,27 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
     val pendingUpdate = candidate
     if (confirmInstall && pendingUpdate != null) {
         val relation = firmwareRelation(pendingUpdate.currentVersion, pendingUpdate.version)
-        val body = when (relation) {
-            FirmwareRelation.DOWNGRADE -> "سيتم الرجوع من ${pendingUpdate.currentVersion ?: "الإصدار الحالي"} إلى ${pendingUpdate.version}. هذا الداون قريد ظاهر كمسار قابل للتنفيذ، وسيعاد فحص التوافق قبل البدء. لا تفصل الكهرباء عن الراوتر."
-            FirmwareRelation.UPGRADE -> "سيتم التحديث من ${pendingUpdate.currentVersion ?: "الإصدار الحالي"} إلى ${pendingUpdate.version}. سيعاد فحص التوافق قبل البدء. لا تفصل الكهرباء عن الراوتر."
-            else -> "سيتم الانتقال إلى ${pendingUpdate.version} بعد إعادة فحص التوافق. لا تفصل الكهرباء عن الراوتر."
+        val body = when {
+            selectedSource == FirmwareUiSource.LOCAL_FILE ->
+                "سيتم رفع الملف من الجوال إلى الراوتر بعد إعادة فحص SHA-256 وهوية الموديل والـHardware. لا تفصل الكهرباء أو Wi-Fi حتى تنتهي العملية."
+            relation == FirmwareRelation.DOWNGRADE ->
+                "سيتم الرجوع من ${pendingUpdate.currentVersion ?: "الإصدار الحالي"} إلى ${pendingUpdate.version}. سيعاد فحص التوافق قبل البدء. لا تفصل الكهرباء عن الراوتر."
+            relation == FirmwareRelation.UPGRADE ->
+                "سيتم التحديث من ${pendingUpdate.currentVersion ?: "الإصدار الحالي"} إلى ${pendingUpdate.version}. سيعاد فحص التوافق قبل البدء. لا تفصل الكهرباء عن الراوتر."
+            else ->
+                "سيتم الانتقال إلى ${pendingUpdate.version} بعد إعادة فحص التوافق. لا تفصل الكهرباء عن الراوتر."
         }
         AlertDialog(
             onDismissRequest = { if (!installing) confirmInstall = false },
-            title = { Text(if (relation == FirmwareRelation.DOWNGRADE) "تنفيذ الداون قريد؟" else "تنفيذ التحديث؟") },
+            title = {
+                Text(
+                    when {
+                        selectedSource == FirmwareUiSource.LOCAL_FILE -> "رفع وتثبيت الملف؟"
+                        relation == FirmwareRelation.DOWNGRADE -> "تنفيذ الداون قريد؟"
+                        else -> "تنفيذ التحديث؟"
+                    }
+                )
+            },
             text = { Text(body) },
             confirmButton = {
                 TextButton(onClick = {
@@ -193,40 +271,75 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
                 CurrentFirmwareCard(current)
 
                 HaiCard {
-                    HaiSectionTitle("مصدر البحث")
+                    HaiSectionTitle("مصدر التحديث")
                     HaiTwoPane(
                         first = {
                             SourceButton(
                                 title = "رسمي",
-                                selected = selectedSource == FirmwareSearchSource.OFFICIAL,
+                                selected = selectedSource == FirmwareUiSource.OFFICIAL,
                                 enabled = !searching && !installing,
-                                onClick = { chooseSource(FirmwareSearchSource.OFFICIAL) }
+                                onClick = { chooseSource(FirmwareUiSource.OFFICIAL) }
                             )
                         },
                         second = {
                             SourceButton(
                                 title = "الشركات",
-                                selected = selectedSource == FirmwareSearchSource.COMPANIES,
+                                selected = selectedSource == FirmwareUiSource.COMPANIES,
                                 enabled = !searching && !installing,
-                                onClick = { chooseSource(FirmwareSearchSource.COMPANIES) }
+                                onClick = { chooseSource(FirmwareUiSource.COMPANIES) }
                             )
                         }
                     )
+                    SourceButton(
+                        title = "ملف من الجوال",
+                        selected = selectedSource == FirmwareUiSource.LOCAL_FILE,
+                        enabled = !searching && !installing,
+                        onClick = {
+                            chooseSource(FirmwareUiSource.LOCAL_FILE)
+                            filePicker.launch(arrayOf("application/zip", "application/octet-stream", "application/x-binary", "*/*"))
+                        }
+                    )
                     Button(
-                        onClick = ::searchUpdates,
+                        onClick = {
+                            if (selectedSource == FirmwareUiSource.LOCAL_FILE) {
+                                filePicker.launch(arrayOf("application/zip", "application/octet-stream", "application/x-binary", "*/*"))
+                            } else {
+                                searchUpdates()
+                            }
+                        },
                         enabled = !searching && !installing,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
                     ) {
-                        Text(if (selectedSource == FirmwareSearchSource.OFFICIAL) "بحث عن تحديث رسمي" else "بحث في تحديثات الشركات")
+                        Text(
+                            when (selectedSource) {
+                                FirmwareUiSource.OFFICIAL -> "بحث عن تحديث رسمي"
+                                FirmwareUiSource.COMPANIES -> "بحث في تحديثات الشركات"
+                                FirmwareUiSource.LOCAL_FILE -> "اختيار ملف Firmware من الجوال"
+                            }
+                        )
                     }
                 }
 
                 if (searching) {
                     ProgressCard(
-                        title = "البحث",
+                        title = if (selectedSource == FirmwareUiSource.LOCAL_FILE) "فحص الملف" else "البحث",
                         progress = searchProgress,
                         stage = searchStage
                     )
+                }
+
+                localSelection?.let { selection ->
+                    HaiCard {
+                        HaiSectionTitle("الملف المختار")
+                        Text(selection.fileName, fontWeight = FontWeight.SemiBold, maxLines = 3)
+                        HaiValueRow("الحجم", selection.candidate.size)
+                        HaiValueRow("SHA-256", selection.sha256.take(12) + "…" + selection.sha256.takeLast(8))
+                        HaiStatusChip(if (selection.catalogVerified) "مطابق لقاعدة HAI" else "فحص محلي", active = selection.catalogVerified)
+                        HaiStatusChip(
+                            if (selection.uploadTarget != null) "Local Upgrade متاح" else "Local Upgrade غير معلن",
+                            active = selection.uploadTarget != null
+                        )
+                    }
                 }
 
                 candidate?.let { update ->
@@ -240,6 +353,7 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
                         Text(
                             when {
                                 !update.installable -> "التثبيت غير متاح"
+                                selectedSource == FirmwareUiSource.LOCAL_FILE -> "رفع وتثبيت الملف"
                                 relation == FirmwareRelation.DOWNGRADE -> "تثبيت الداون قريد"
                                 else -> "تثبيت الإصدار"
                             }
@@ -249,14 +363,12 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
 
                 if (findings.isNotEmpty()) {
                     HaiSectionTitle("إصدارات أخرى وجدها التطبيق")
-                    findings.forEach { finding ->
-                        FirmwareFindingCard(currentVersion, finding)
-                    }
+                    findings.forEach { finding -> FirmwareFindingCard(currentVersion, finding) }
                 }
 
                 if (installing) {
                     ProgressCard(
-                        title = "تنفيذ النظام",
+                        title = if (selectedSource == FirmwareUiSource.LOCAL_FILE) "رفع وتحديث الراوتر" else "تنفيذ النظام",
                         progress = installProgress,
                         stage = installStage
                     )
@@ -269,8 +381,8 @@ private fun FirmwareToolsScreen(onClose: () -> Unit) {
                             Text(it)
                         }
                     }
-                } else if (installing.not()) {
-                    message?.takeIf { it.contains("فشل") || it.contains("تعذر") }?.let {
+                } else if (!installing) {
+                    message?.takeIf { it.contains("فشل") || it.contains("تعذر") || selectedSource == FirmwareUiSource.LOCAL_FILE }?.let {
                         HaiCard { Text(it) }
                     }
                 }
@@ -333,6 +445,8 @@ private fun UpdateCandidateCard(update: FirmwareCandidate) {
         HaiValueRow("الحجم", update.size)
         HaiStatusChip(
             when {
+                update.installMode == "local_upload" && update.installable -> "ملف جاهز للرفع"
+                update.installMode == "local_upload" -> "الملف غير جاهز للتثبيت"
                 relation == FirmwareRelation.DOWNGRADE && update.installable -> "داون قريد مسموح"
                 relation == FirmwareRelation.DOWNGRADE -> "داون قريد غير موثق للتثبيت"
                 update.installable -> "جاهز للتثبيت"
@@ -371,7 +485,7 @@ private fun ProgressCard(title: String, progress: Int, stage: String) {
 }
 
 private fun firmwareRelation(current: String?, target: String): FirmwareRelation {
-    if (current.isNullOrBlank() || target.isBlank()) return FirmwareRelation.DIFFERENT
+    if (current.isNullOrBlank() || target.isBlank() || target == "ملف محلي") return FirmwareRelation.DIFFERENT
     if (current.equals(target, ignoreCase = true)) return FirmwareRelation.SAME
 
     val currentBuild = buildNumber(current)
@@ -394,7 +508,6 @@ private fun firmwareRelation(current: String?, target: String): FirmwareRelation
             else -> FirmwareRelation.DIFFERENT
         }
     }
-
     return FirmwareRelation.DIFFERENT
 }
 
