@@ -72,7 +72,7 @@ private fun ImeiUnlockScreen(
     modelHint: String?,
     onClose: () -> Unit
 ) {
-    val context = LocalLocalContext.current
+    val context = LocalContext.current
     var imei by remember { mutableStateOf(initialImei.filter(Char::isDigit).take(15)) }
     var brand by remember { mutableStateOf(initialBrand) }
     var report by remember { mutableStateOf<ImeiUnlockReport?>(null) }
