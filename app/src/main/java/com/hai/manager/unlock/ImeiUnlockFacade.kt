@@ -59,6 +59,24 @@ object ImeiUnlockFacade {
             )
         }
 
+        // MediaTek CPE profiles are modern modem/NVRAM platforms. They must never fall through to
+        // the legacy ZTE ZX297520V3 calculator just because the IMEI is valid and the TAC is absent.
+        val platform = PlatformResolver.resolve(resolvedModel)
+        val isMediaTek = platform?.family?.startsWith("MEDIATEK-") == true ||
+            platform?.family == "ZTE-MC8512-PLATFORM-VARIANT"
+        if (isMediaTek) {
+            report = report.copy(
+                generation = UnlockGeneration.FIVE_G,
+                family = if (platform?.family == "ZTE-MC8512-PLATFORM-VARIANT") {
+                    "ZTE MC8512 — platform must be fingerprinted"
+                } else {
+                    platform?.name ?: "MediaTek 5G CPE"
+                },
+                codes = emptyList(),
+                warning = "منصة MediaTek حديثة/محتملة. لا يستخدم HAI خوارزمية ZTE القديمة ولا يولد NCK من IMEI. يجب إثبات الـHardware/Firmware ثم استخدام تشخيص SIMLOCK/NVRAM الخاص بالمنصة."
+            )
+        }
+
         if (tac == null) return report
         return report.copy(
             sourceNotes = listOf(
