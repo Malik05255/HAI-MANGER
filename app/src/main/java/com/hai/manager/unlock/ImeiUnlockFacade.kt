@@ -15,7 +15,20 @@ object ImeiUnlockFacade {
             else -> UnlockBrand.AUTO
         }
         val resolvedModel = modelHint?.takeIf { it.isNotBlank() } ?: tac?.model
-        val report = ImeiUnlockEngine.analyze(imei, resolvedBrand, resolvedModel)
+        var report = ImeiUnlockEngine.analyze(imei, resolvedBrand, resolvedModel)
+
+        if (resolvedBrand == UnlockBrand.HUAWEI && resolvedModel.isNullOrBlank() && report.codes.isNotEmpty()) {
+            report = report.copy(
+                codes = report.codes.map { candidate ->
+                    candidate.copy(
+                        confidence = UnlockConfidence.FAMILY_ONLY,
+                        note = "${candidate.note} لم يتم التعرف على الموديل من TAC، لذلك هذا مرشح لعائلة Huawei القديمة وليس ضمانًا لهذا الجهاز."
+                    )
+                },
+                warning = "الموديل غير معروف من TAC. لا تستخدم أكواد Legacy على B-series أو 5G قبل التأكد من الموديل/الـFirmware."
+            )
+        }
+
         if (tac == null) return report
         return report.copy(
             sourceNotes = listOf(
