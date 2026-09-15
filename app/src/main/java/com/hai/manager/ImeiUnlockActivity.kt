@@ -28,7 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import com.hai.manager.unlock.ImeiUnlockEngine
+import com.hai.manager.unlock.ImeiUnlockFacade
 import com.hai.manager.unlock.ImeiUnlockReport
 import com.hai.manager.unlock.UnlockBrand
 import com.hai.manager.unlock.UnlockConfidence
@@ -95,10 +95,12 @@ private fun ImeiUnlockScreen(
 
             if (!modelHint.isNullOrBlank()) {
                 HaiValueRow("الموديل المكتشف", modelHint)
+            } else {
+                Text("إذا كان TAC معروفًا سيحدد HAI الشركة والموديل تلقائيًا من أول 8 أرقام.")
             }
 
             if (initialBrand == UnlockBrand.AUTO) {
-                Text("الشركة", fontWeight = FontWeight.SemiBold)
+                Text("الشركة — اختياري عند التعرف من TAC", fontWeight = FontWeight.SemiBold)
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -107,7 +109,7 @@ private fun ImeiUnlockScreen(
                         FilterChip(
                             selected = brand == item,
                             onClick = {
-                                brand = item
+                                brand = if (brand == item) UnlockBrand.AUTO else item
                                 report = null
                             },
                             label = { Text(item.displayName) }
@@ -119,8 +121,8 @@ private fun ImeiUnlockScreen(
             }
 
             Button(
-                onClick = { report = ImeiUnlockEngine.analyze(imei, brand, modelHint) },
-                enabled = imei.length == 15 && brand != UnlockBrand.AUTO,
+                onClick = { report = ImeiUnlockFacade.analyze(imei, brand, modelHint) },
+                enabled = imei.length == 15,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("تحليل واستخراج الكود")
@@ -160,7 +162,7 @@ private fun ImeiUnlockScreen(
             } else {
                 HaiCard {
                     HaiSectionTitle("لا يوجد مولد موثّق لهذا الجيل")
-                    Text("لن يعرض HAI كودًا تخمينيًا قد يستهلك محاولات NCK. استخدم صفحة قفل المشغل لقراءة الحالة والعداد عند الاتصال بالراوتر.")
+                    Text("لن يعرض HAI كودًا تخمينيًا قد يستهلك محاولات NCK. إذا كان الراوتر متصلًا، استخدم تشخيص قفل المشغل والـFirmware Profile لتحديد المسار الصحيح.")
                 }
             }
 
