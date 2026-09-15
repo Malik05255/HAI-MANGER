@@ -11,7 +11,13 @@ data class ConnectedUnlockContext(
     val attemptsRemaining: String? = null,
     val firmware: String? = null,
     val currentOperator: String? = null,
-    val source: String? = null
+    val source: String? = null,
+    val modemState: String? = null,
+    val waitingForNck: Boolean = false,
+    val lockedHplmns: String? = null,
+    val nckRelatedValue: String? = null,
+    val webVersion: String? = null,
+    val diagnostic: String? = null
 ) {
     val attemptsAsInt: Int?
         get() = attemptsRemaining
