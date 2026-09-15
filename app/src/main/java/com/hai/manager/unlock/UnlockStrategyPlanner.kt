@@ -31,12 +31,13 @@ object UnlockStrategyPlanner {
     fun plan(
         report: ImeiUnlockReport,
         platform: ModemPlatformProfile?,
-        modelHint: String?
+        modelHint: String?,
+        connected: ConnectedUnlockContext? = null
     ): UnlockStrategyPlan {
         val model = modelHint.orEmpty().uppercase()
 
-        if (report.codes.any { it.confidence == UnlockConfidence.VERIFIED }) {
-            return UnlockStrategyPlan(
+        val base = when {
+            report.codes.any { it.confidence == UnlockConfidence.VERIFIED } -> UnlockStrategyPlan(
                 title = "المسار المقترح",
                 summary = "توجد خوارزمية Offline موثقة لهذه العائلة. ابدأ بالكود المطابق للعائلة فقط ولا تستخدم أكواد أجيال أخرى.",
                 steps = listOf(
@@ -45,10 +46,8 @@ object UnlockStrategyPlanner {
                     UnlockPathStep(3, "إدخال الكود", UnlockPathStatus.DIAGNOSTICS, "يتم الإدخال فقط عبر واجهة الجهاز أو API/AT موثق لنفس الموديل.")
                 )
             )
-        }
 
-        if (platform == null) {
-            return UnlockStrategyPlan(
+            platform == null -> UnlockStrategyPlan(
                 title = "المسار المقترح",
                 summary = "المنصة غير محددة بما يكفي لاختيار مسار منخفض المستوى.",
                 steps = listOf(
@@ -57,9 +56,7 @@ object UnlockStrategyPlanner {
                     UnlockPathStep(3, "NCK", UnlockPathStatus.UNAVAILABLE, "لا يتم توليد كود حتى تثبت عائلة خوارزمية متوافقة.")
                 )
             )
-        }
 
-        return when {
             platform.family.startsWith("QUALCOMM-SDX") -> qualcommPlan(platform)
             platform.family.startsWith("HUAWEI-BALONG-5000") -> balong5000Plan()
             platform.family.startsWith("HUAWEI-BALONG") -> balongPlan(model)
@@ -67,7 +64,77 @@ object UnlockStrategyPlanner {
             platform.family.startsWith("MEDIATEK-T830") || platform.family.startsWith("ZTE-MC8512") -> mediatekT830Plan(platform)
             else -> genericPlatformPlan(platform)
         }
+
+        return applyConnectedContext(base, connected)
     }
+
+    private fun applyConnectedContext(
+        base: UnlockStrategyPlan,
+        connected: ConnectedUnlockContext?
+    ): UnlockStrategyPlan {
+        if (connected == null) return base
+
+        if (connected.state == ConnectedLockState.UNLOCKED) {
+            return UnlockStrategyPlan(
+                title = "المسار المقترح — لا يحتاج فك",
+                summary = "الراوتر المتصل يعلن أن Network/SIM lock غير مفعّل. لا يوجد سبب لتجربة NCK أو مسارات منخفضة المستوى.",
+                steps = listOf(
+                    UnlockPathStep(1, "حالة القفل", UnlockPathStatus.READY, "الجهاز يعلن أنه غير مقفل على مشغل."),
+                    UnlockPathStep(2, "التحقق الدوري", UnlockPathStatus.DIAGNOSTICS, "يمكن إعادة قراءة الحالة بعد تغيير الشريحة أو الـFirmware فقط."),
+                    UnlockPathStep(3, "مسارات الفك", UnlockPathStatus.UNAVAILABLE, "لا تشغّل NCK/EDL/NVRAM ما دام القفل غير مفعّل.")
+                )
+            )
+        }
+
+        val identityDetails = buildList {
+            connected.firmware?.takeIf { it.isNotBlank() }?.let { add("Firmware: $it") }
+            connected.currentOperator?.takeIf { it.isNotBlank() }?.let { add("الشبكة: $it") }
+            connected.source?.takeIf { it.isNotBlank() }?.let { add("المصدر: $it") }
+        }.joinToString(" • ")
+
+        if (connected.state == ConnectedLockState.LOCKED && connected.attemptsExhausted) {
+            val guarded = base.steps.map { step ->
+                if (step.status == UnlockPathStatus.READY && step.title.contains("NCK", ignoreCase = true)) {
+                    step.copy(
+                        status = UnlockPathStatus.DIAGNOSTICS,
+                        description = "يمكن حساب الكود Offline، لكن لا يتم إدخاله لأن عداد المحاولات الظاهر = 0."
+                    )
+                } else step
+            }
+            return base.copy(
+                title = "${base.title} — المحاولات منتهية",
+                summary = "الجهاز مقفل ويعرض 0 محاولة متبقية. أوقف إدخال الأكواد وانتقل إلى تشخيص Firmware/القفل أو مسار استعادة موثق. ${identityDetails}".trim(),
+                steps = renumber(
+                    listOf(
+                        UnlockPathStep(0, "عداد NCK", UnlockPathStatus.UNAVAILABLE, "0 محاولة متبقية — لا ترسل أي كود إضافي.")
+                    ) + guarded
+                )
+            )
+        }
+
+        val lockDescription = when (connected.state) {
+            ConnectedLockState.LOCKED -> {
+                val attempts = connected.attemptsRemaining?.takeIf { it.isNotBlank() }
+                if (attempts != null) "القفل مؤكد. المحاولات الظاهرة: $attempts." else "القفل مؤكد، لكن عداد المحاولات غير مكشوف."
+            }
+            ConnectedLockState.UNKNOWN -> "الراوتر متصل، لكن حالة القفل لم تُحسم من الواجهة الحالية."
+            ConnectedLockState.UNLOCKED -> "غير مقفل"
+        }
+
+        return base.copy(
+            summary = listOf(lockDescription, identityDetails, base.summary)
+                .filter { it.isNotBlank() }
+                .joinToString(" "),
+            steps = renumber(
+                listOf(
+                    UnlockPathStep(0, "تشخيص الراوتر المتصل", UnlockPathStatus.DIAGNOSTICS, lockDescription)
+                ) + base.steps
+            )
+        )
+    }
+
+    private fun renumber(steps: List<UnlockPathStep>): List<UnlockPathStep> =
+        steps.mapIndexed { index, step -> step.copy(order = index + 1) }
 
     private fun qualcommPlan(platform: ModemPlatformProfile): UnlockStrategyPlan {
         val modelLabel = platform.models.substringBefore("/").trim().ifBlank { "الجهاز" }
