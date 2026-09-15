@@ -72,7 +72,7 @@ private fun ImeiUnlockScreen(
     modelHint: String?,
     onClose: () -> Unit
 ) {
-    val context = LocalContext.current
+    val context = LocalLocalContext.current
     var imei by remember { mutableStateOf(initialImei.filter(Char::isDigit).take(15)) }
     var brand by remember { mutableStateOf(initialBrand) }
     var report by remember { mutableStateOf<ImeiUnlockReport?>(null) }
@@ -170,6 +170,11 @@ private fun ImeiUnlockScreen(
                     HaiValueRow("Platform", platform.family)
                     HaiValueRow("الثقة", platform.confidence.displayName)
                     Text(platform.note)
+                    HorizontalDivider()
+                    Text("SIM personalization", fontWeight = FontWeight.SemiBold)
+                    Text(platform.personalizationProtocol)
+                    Text("توليد NCK من IMEI", fontWeight = FontWeight.SemiBold)
+                    Text(platform.imeiNckDerivation)
                     HorizontalDivider()
                     Text("طبقات البحث", fontWeight = FontWeight.SemiBold)
                     Text(platform.accessLayers.joinToString(" • "))
