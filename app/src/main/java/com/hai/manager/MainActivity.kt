@@ -1,8 +1,6 @@
 package com.hai.manager
 
 import android.Manifest
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -23,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -49,7 +48,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.hai.manager.router.CarrierLockState
-import com.hai.manager.router.Mc801aDiagnosticReporter
 import com.hai.manager.router.RouterAccessStatus
 import com.hai.manager.router.RouterBrand
 import com.hai.manager.router.RouterCarrierLockProbeService
@@ -65,7 +63,10 @@ import com.hai.manager.unlock.ImeiUnlockFacade
 import com.hai.manager.unlock.PlatformResolver
 import com.hai.manager.unlock.UnlockBrand
 import com.hai.manager.unlock.UnlockConfidence
+import com.hai.manager.update.ApkUpdateInstaller
+import com.hai.manager.update.UpdateCheckResult
 import com.hai.manager.update.UpdateNotifications
+import com.hai.manager.update.UpdateRepository
 import com.hai.manager.update.UpdateScheduler
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -101,6 +102,7 @@ fun HaiManagerApp() {
     val probe = remember { RouterCapabilityProbeService() }
     val lockProbe = remember { RouterCarrierLockProbeService() }
     val unlocker = remember { RouterNetworkUnlockService() }
+    val updateRepository = remember { UpdateRepository() }
 
     var screen by remember { mutableStateOf(AppScreen.HOME) }
     var stage by remember { mutableStateOf(SystemStage.READY) }
@@ -110,8 +112,10 @@ fun HaiManagerApp() {
     var lockSummary by remember { mutableStateOf<RouterCarrierLockSummary?>(null) }
     var verifiedNck by remember { mutableStateOf<String?>(null) }
     var manualNck by remember { mutableStateOf("") }
+    var showNckEntry by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var loginUrl by remember { mutableStateOf<String?>(null) }
+    var updateChecking by remember { mutableStateOf(false) }
 
     suspend fun moveProgress(target: Int) {
         while (progress < target) {
@@ -128,7 +132,30 @@ fun HaiManagerApp() {
         lockSummary = null
         verifiedNck = null
         manualNck = ""
+        showNckEntry = false
         message = null
+    }
+
+    fun checkForUpdate() {
+        if (updateChecking) return
+        scope.launch {
+            updateChecking = true
+            when (val result = updateRepository.check()) {
+                is UpdateCheckResult.Failure -> Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                is UpdateCheckResult.Success -> {
+                    val update = result.update
+                    if (!update.available) {
+                        Toast.makeText(context, "التطبيق محدث", Toast.LENGTH_SHORT).show()
+                    } else if (!update.signatureStable || !update.downloadable) {
+                        Toast.makeText(context, "التحديث غير جاهز للتثبيت", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "يتوفر إصدار ${update.versionName}", Toast.LENGTH_SHORT).show()
+                        ApkUpdateInstaller.downloadAndInstall(context, update)
+                    }
+                }
+            }
+            updateChecking = false
+        }
     }
 
     fun diagnose() {
@@ -139,6 +166,8 @@ fun HaiManagerApp() {
             message = null
             lockSummary = null
             verifiedNck = null
+            manualNck = ""
+            showNckEntry = false
             moveProgress(12)
 
             val found = discovery.discover()
@@ -155,7 +184,7 @@ fun HaiManagerApp() {
             inspection = inspected
             moveProgress(52)
             if (inspected.accessStatus == RouterAccessStatus.AUTH_REQUIRED) {
-                message = "يحتاج الراوتر تسجيل الدخول أولًا."
+                message = "سجّل الدخول إلى الراوتر ثم أعد التشخيص."
                 moveProgress(100)
                 stage = SystemStage.RESULT
                 return@launch
@@ -195,8 +224,18 @@ fun HaiManagerApp() {
 
     fun unlock() {
         val current = inspection ?: return
-        val code = verifiedNck ?: manualNck.takeIf { it.matches(Regex("[0-9]{6,32}")) } ?: return
+        val profile = current.firmwareProfileInfo
+        val runtimeReady = profile.nckEntry.canWrite && current.probeReport?.nckEntryVerified == true
+        val attemptsZero = lockSummary?.attemptsRemaining?.trim()?.toIntOrNull() == 0
+        if (lockSummary?.state != CarrierLockState.LOCKED || !runtimeReady || attemptsZero) return
+
+        val code = verifiedNck ?: manualNck.takeIf { it.matches(Regex("[0-9]{6,32}")) }
+        if (code == null) {
+            showNckEntry = true
+            return
+        }
         if (stage == SystemStage.UNLOCKING) return
+
         scope.launch {
             stage = SystemStage.UNLOCKING
             progress = 0
@@ -209,24 +248,15 @@ fun HaiManagerApp() {
                 lockSummary = runCatching { lockProbe.probe(current) }.getOrNull()
             }
             moveProgress(100)
-            val unlocked = lockSummary?.state == CarrierLockState.UNLOCKED
-            if (unlocked) {
+            if (lockSummary?.state == CarrierLockState.UNLOCKED) {
                 stage = SystemStage.DONE
+                showNckEntry = false
                 message = "تم فك القفل. الراوتر جاهز لشريحة أخرى."
             } else {
                 stage = SystemStage.RESULT
                 message = if (result.success) "تم إرسال رقم الفك، لكن لم يتم تأكيد فتح القفل بعد." else result.message
             }
         }
-    }
-
-    fun copyMc801aDiagnostic() {
-        val current = inspection ?: return
-        val report = Mc801aDiagnosticReporter.build(current, lockSummary)
-        if (!report.applicable) return
-        val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return
-        clipboard.setPrimaryClip(ClipData.newPlainText("HAI MC801A diagnostic", report.shareText()))
-        Toast.makeText(context, "تم نسخ التقرير بدون بيانات حساسة", Toast.LENGTH_SHORT).show()
     }
 
     HaiTheme {
@@ -244,13 +274,13 @@ fun HaiManagerApp() {
 
             when (screen) {
                 AppScreen.HOME -> SimpleHomeScreen(
-                    onImei = {
-                        context.startActivity(Intent(context, ImeiUnlockActivity::class.java))
-                    },
+                    updateChecking = updateChecking,
+                    onImei = { context.startActivity(Intent(context, ImeiUnlockActivity::class.java)) },
                     onSystem = {
                         resetSystem()
                         screen = AppScreen.SYSTEM_UNLOCK
-                    }
+                    },
+                    onUpdate = ::checkForUpdate
                 )
 
                 AppScreen.SYSTEM_UNLOCK -> {
@@ -266,12 +296,12 @@ fun HaiManagerApp() {
                         lockSummary = lockSummary,
                         verifiedNck = verifiedNck,
                         manualNck = manualNck,
+                        showNckEntry = showNckEntry,
                         message = message,
-                        onNckChange = { value -> manualNck = value.filter(Char::isDigit).take(32) },
+                        onNckChange = { manualNck = it.filter(Char::isDigit).take(32) },
                         onDiagnose = ::diagnose,
                         onLogin = { loginUrl = router?.managementUrl },
                         onUnlock = ::unlock,
-                        onCopyMc801aDiagnostic = ::copyMc801aDiagnostic,
                         onBack = {
                             resetSystem()
                             screen = AppScreen.HOME
@@ -285,23 +315,32 @@ fun HaiManagerApp() {
 
 @Composable
 private fun SimpleHomeScreen(
+    updateChecking: Boolean,
     onImei: () -> Unit,
-    onSystem: () -> Unit
+    onSystem: () -> Unit,
+    onUpdate: () -> Unit
 ) {
     HaiPage(title = "HAI MANAGER", subtitle = "فك قفل الراوتر") {
-        Text("اختر الطريقة", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         UnlockOptionCard(
             title = "فك القفل عبر IMEI",
-            subtitle = "أدخل الرقم واحصل على نتيجة الفك",
+            subtitle = "أدخل IMEI وشخّص إمكانية الفك",
             icon = Icons.Outlined.Lock,
             onClick = onImei
         )
         UnlockOptionCard(
             title = "فك القفل عبر الراوتر",
-            subtitle = "وصّل الراوتر ودع التطبيق يشخّصه",
+            subtitle = "اتصل بالراوتر وشخّصه ثم فك القفل",
             icon = Icons.Outlined.Router,
             onClick = onSystem
         )
+        OutlinedButton(
+            onClick = onUpdate,
+            enabled = !updateChecking,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Outlined.Refresh, contentDescription = null)
+            Text(if (updateChecking) " جاري التحقق..." else " التحديث")
+        }
     }
 }
 
@@ -314,7 +353,7 @@ private fun UnlockOptionCard(
 ) {
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 118.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 112.dp),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -324,18 +363,12 @@ private fun UnlockOptionCard(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.primaryContainer
-            ) {
-                Box(Modifier.size(52.dp), contentAlignment = Alignment.Center) {
+            Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                Box(Modifier.size(50.dp), contentAlignment = Alignment.Center) {
                     Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 }
             }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -352,44 +385,38 @@ private fun SystemUnlockScreen(
     lockSummary: RouterCarrierLockSummary?,
     verifiedNck: String?,
     manualNck: String,
+    showNckEntry: Boolean,
     message: String?,
     onNckChange: (String) -> Unit,
     onDiagnose: () -> Unit,
     onLogin: () -> Unit,
     onUnlock: () -> Unit,
-    onCopyMc801aDiagnostic: () -> Unit,
     onBack: () -> Unit
 ) {
     val model = inspection?.device?.model ?: router?.model
     val platform = PlatformResolver.resolve(model)
     val attemptsZero = lockSummary?.attemptsRemaining?.trim()?.toIntOrNull() == 0
     val profile = inspection?.firmwareProfileInfo
-    val runtimeNckReady = inspection != null &&
-        profile?.nckEntry?.canWrite == true &&
-        inspection.probeReport?.nckEntryVerified == true
-    val manualNckValid = manualNck.matches(Regex("[0-9]{6,32}"))
-    val effectiveNckAvailable = verifiedNck != null || manualNckValid
-    val needsManualNck = inspection != null &&
-        lockSummary?.state == CarrierLockState.LOCKED &&
-        !attemptsZero &&
-        runtimeNckReady &&
-        verifiedNck == null
-    val autoReady = inspection != null &&
-        lockSummary?.state == CarrierLockState.LOCKED &&
-        !attemptsZero &&
-        effectiveNckAvailable &&
-        runtimeNckReady
-    val mc801aReport = inspection
-        ?.let { Mc801aDiagnosticReporter.build(it, lockSummary) }
-        ?.takeIf { it.applicable }
+    val runtimeReady = inspection != null && profile?.nckEntry?.canWrite == true && inspection.probeReport?.nckEntryVerified == true
+    val locked = lockSummary?.state == CarrierLockState.LOCKED
+    val unlocked = lockSummary?.state == CarrierLockState.UNLOCKED || stage == SystemStage.DONE
+    val canUnlock = locked && runtimeReady && !attemptsZero
+    val lockText = when {
+        unlocked -> "مفكوك"
+        locked -> "مقفل"
+        else -> "غير معروف"
+    }
+    val unlockableText = when {
+        unlocked -> "لا يحتاج فك"
+        canUnlock -> "نعم"
+        locked -> "لا"
+        else -> "غير معروف"
+    }
 
-    HaiPage(title = "فك القفل عبر الراوتر", subtitle = "اتبع الخطوات فقط") {
+    HaiPage(title = "فك القفل عبر الراوتر", subtitle = "تشخيص بسيط ثم فك القفل") {
         if (stage == SystemStage.READY) {
             HaiCard {
-                HaiSectionTitle("قبل التشخيص")
-                Text("1. شغّل الراوتر")
-                Text("2. اتصل من الجوال بشبكة Wi‑Fi الخاصة بالراوتر")
-                Text("3. إذا كان الراوتر يوفّر شبكة عبر Type‑C يمكنك استخدامها بدل Wi‑Fi")
+                Text("اتصل بشبكة الراوتر ثم اضغط تشخيص.")
                 Button(onClick = onDiagnose, modifier = Modifier.fillMaxWidth()) {
                     Text("تشخيص")
                 }
@@ -398,14 +425,8 @@ private fun SystemUnlockScreen(
 
         if (stage == SystemStage.DIAGNOSING || stage == SystemStage.UNLOCKING) {
             HaiCard {
-                Text(
-                    if (stage == SystemStage.UNLOCKING) "جاري فك القفل" else "جاري التشخيص",
-                    fontWeight = FontWeight.Bold
-                )
-                LinearProgressIndicator(
-                    progress = { progress / 100f },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Text(if (stage == SystemStage.UNLOCKING) "جاري فك القفل" else "جاري التشخيص", fontWeight = FontWeight.Bold)
+                LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth())
                 Text("$progress%", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             }
         }
@@ -418,77 +439,47 @@ private fun SystemUnlockScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("النتيجة", fontWeight = FontWeight.Bold)
-                    if (stage == SystemStage.DONE) {
-                        Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    }
+                    if (unlocked) Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 }
+                HaiValueRow("الشركة", inspection?.snapshot?.brand?.displayName ?: router?.brand?.displayName ?: "غير معروف")
                 HaiValueRow("الراوتر", model ?: "غير معروف")
                 HaiValueRow("المعالج", platform?.name ?: "غير معروف")
-                HaiValueRow("حالة القفل", lockSummary?.state?.displayName ?: "غير معروف")
-                HaiValueRow("المحاولات", lockSummary?.attemptsRemaining ?: "غير معروف")
-                HaiValueRow(
-                    "الفك",
-                    when {
-                        lockSummary?.state == CarrierLockState.UNLOCKED -> "لا يحتاج فك"
-                        autoReady -> "جاهز"
-                        attemptsZero -> "متوقف — المحاولات منتهية"
-                        needsManualNck -> "جاهز — أدخل رقم الفك"
-                        lockSummary?.state == CarrierLockState.LOCKED -> "غير متاح لهذا الإصدار"
-                        else -> "غير محسوم"
-                    }
-                )
+                HaiValueRow("إصدار النظام", inspection?.device?.firmwareVersion ?: "غير معروف")
+                HaiValueRow("الشبكة", inspection?.signal?.networkType)
+                HaiValueRow("المشغل", inspection?.signal?.operatorName)
+                HaiValueRow("حالة القفل", lockText)
+                HaiValueRow("قابل للفك", unlockableText)
                 message?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            }
-
-            mc801aReport?.let { report ->
-                HaiCard {
-                    HaiSectionTitle("تشخيص MC801A")
-                    HaiValueRow("Firmware", report.firmware)
-                    HaiValueRow("Hardware", report.hardware)
-                    HaiValueRow("WebUI", report.webUi)
-                    HaiValueRow("بصمة النظام", report.firmwareFingerprint)
-                    HaiValueRow("مفتاح أوامر ZTE", report.actionSeedStatus?.displayName ?: "غير متوفر")
-                    HaiValueRow("قراءة Network Lock", report.networkLockStatus?.displayName ?: "غير متوفر")
-                    HaiValueRow("مسار إدخال NCK", report.nckWriteStatus?.displayName ?: "غير متوفر")
-                    HaiValueRow("الجاهزية", report.readiness.displayName)
-                    report.nckEvidence?.let {
-                        Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Text(
-                        "تقرير النسخ يستبعد IMEI وSerial وICCID وIMSI وSSID ومفاتيح AD/RD.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedButton(onClick = onCopyMc801aDiagnostic, modifier = Modifier.fillMaxWidth()) {
-                        Text("نسخ تقرير التشخيص")
-                    }
-                }
             }
 
             if (inspection?.accessStatus == RouterAccessStatus.AUTH_REQUIRED && router?.managementUrl != null) {
                 Button(onClick = onLogin, modifier = Modifier.fillMaxWidth()) {
-                    Text("تسجيل الدخول للراوتر")
+                    Text("تسجيل الدخول")
                 }
-            } else {
-                if (needsManualNck) {
+            }
+
+            if (canUnlock) {
+                if (showNckEntry && verifiedNck == null) {
                     HaiCard {
                         OutlinedTextField(
                             value = manualNck,
                             onValueChange = onNckChange,
-                            label = { Text("رقم الفك NCK") },
+                            label = { Text("رقم الفك") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                 }
-
-                if (autoReady) {
-                    Button(onClick = onUnlock, modifier = Modifier.fillMaxWidth()) {
-                        Text("فك القفل")
-                    }
-                } else if (lockSummary?.state == CarrierLockState.UNLOCKED || stage == SystemStage.DONE) {
-                    HaiCard {
-                        Text("الراوتر مفتوح وجاهز لشريحة أخرى.", fontWeight = FontWeight.Bold)
-                    }
+                Button(
+                    onClick = onUnlock,
+                    enabled = verifiedNck != null || !showNckEntry || manualNck.matches(Regex("[0-9]{6,32}")),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (showNckEntry && verifiedNck == null) "تنفيذ فك القفل" else "فك القفل")
+                }
+            } else if (unlocked) {
+                HaiCard {
+                    Text("الراوتر مفكوك وجاهز لشريحة أخرى.", fontWeight = FontWeight.Bold)
                 }
             }
 
