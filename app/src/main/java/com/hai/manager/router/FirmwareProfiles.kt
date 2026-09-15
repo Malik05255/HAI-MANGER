@@ -166,10 +166,24 @@ object RouterFirmwareProfiles {
                 model = normalizedModel.ifBlank { "MC801A" },
                 firmware = normalizedFirmware,
                 bandLock = ProfileActionSupport.VERIFIED,
-                nckEntry = ProfileActionSupport.READ_ONLY,
+                nckEntry = ProfileActionSupport.RUNTIME_PROBE,
                 requiredProbes = setOf("zte_action_seed", "network_mode_read", "nr_band_state"),
                 actionProbes = zte5gActionProbes(),
-                notes = "قفل NR موثق لهذا Firmware. حالة Network Lock ومحاولات NCK تُقرأ فقط؛ إدخال NCK غير مفعّل دون endpoint رسمي موثق."
+                notes = "قفل NR موثق لهذا Firmware. إدخال NCK لا يُفعّل إلا إذا أعلن WebUI الحي UNLOCK_NETWORK ونجحت قراءة حالة القفل والجلسة."
+            )
+        }
+
+        if (brand == RouterBrand.ZTE && normalizedModel.contains("MC801A", ignoreCase = true)) {
+            return FirmwareProfileInfo(
+                profileId = "ZTE-MC801A-GOFORM-RUNTIME",
+                verification = FirmwareVerification.RUNTIME_PROBED,
+                model = normalizedModel.ifBlank { "MC801A" },
+                firmware = normalizedFirmware.ifBlank { "غير معروف" },
+                bandLock = ProfileActionSupport.RUNTIME_PROBE,
+                nckEntry = ProfileActionSupport.RUNTIME_PROBE,
+                requiredProbes = setOf("zte_action_seed", "network_mode_read", "nr_band_state"),
+                actionProbes = zte5gActionProbes(),
+                notes = "MC801A يستخدم goform. الكتابة لـNCK محجوبة افتراضيًا وتفتح فقط بعد إثبات نموذج UNLOCK_NETWORK من ملفات WebUI نفسها ونجاح probes المطلوبة."
             )
         }
 
@@ -269,26 +283,45 @@ object RouterFirmwareProfiles {
 private fun zte5gActionProbes(): Map<RouterWriteOperation, Set<String>> = mapOf(
     RouterWriteOperation.REBOOT to setOf("zte_action_seed"),
     RouterWriteOperation.NETWORK_MODE to setOf("zte_action_seed", "network_mode_read"),
-    RouterWriteOperation.BAND_LOCK to setOf("zte_action_seed", "network_mode_read", "nr_band_state")
+    RouterWriteOperation.BAND_LOCK to setOf("zte_action_seed", "network_mode_read", "nr_band_state"),
+    RouterWriteOperation.NCK_ENTRY to setOf("zte_action_seed", "network_lock_read", "nck_write")
 )
 
 private fun applyProbeRestrictions(
     profile: FirmwareProfileInfo,
     report: RouterCapabilityReport?
 ): FirmwareProfileInfo {
-    if (!profile.bandLock.canWrite) return profile
-    val required = profile.actionProbes[RouterWriteOperation.BAND_LOCK].orEmpty().ifEmpty { profile.requiredProbes }
-    if (required.isEmpty()) return profile
     val available = report?.items
         ?.filter { it.status == CapabilityProbeStatus.AVAILABLE }
         ?.mapTo(mutableSetOf()) { it.id }
         .orEmpty()
-    val missing = required - available
-    if (missing.isEmpty()) return profile
-    return profile.copy(
-        bandLock = ProfileActionSupport.READ_ONLY,
-        notes = "${profile.notes} الكتابة محجوبة حاليًا حتى تنجح probes المطلوبة: ${missing.joinToString(", ")}."
-    )
+
+    var result = profile
+    val blocked = mutableListOf<String>()
+
+    if (profile.bandLock.canWrite) {
+        val required = profile.actionProbes[RouterWriteOperation.BAND_LOCK].orEmpty().ifEmpty { profile.requiredProbes }
+        val missing = required - available
+        if (missing.isNotEmpty()) {
+            result = result.copy(bandLock = ProfileActionSupport.READ_ONLY)
+            blocked += "Band Lock: ${missing.joinToString(", ")}"
+        }
+    }
+
+    if (profile.nckEntry.canWrite) {
+        val required = profile.actionProbes[RouterWriteOperation.NCK_ENTRY].orEmpty().ifEmpty { profile.requiredProbes }
+        val missing = required - available
+        if (missing.isNotEmpty()) {
+            result = result.copy(nckEntry = ProfileActionSupport.READ_ONLY)
+            blocked += "NCK: ${missing.joinToString(", ")}"
+        }
+    }
+
+    return if (blocked.isEmpty()) {
+        result
+    } else {
+        result.copy(notes = "${result.notes} الكتابة محجوبة حاليًا حتى تنجح probes المطلوبة: ${blocked.joinToString(" • ")}.")
+    }
 }
 
 private fun mergeConservatively(
