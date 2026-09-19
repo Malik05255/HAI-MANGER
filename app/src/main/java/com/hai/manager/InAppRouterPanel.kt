@@ -1,112 +1,111 @@
-package com.hai.manager
+Package com.hai.manager
 
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
-import com.hai.manager.router.NativeRouterAuthBrand
-import com.hai.manager.router.RouterAuthService
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+Import androidx.activity.compose.BackHandler
+Import androidx.compose.foundation.layout.fillMaxWidth
+Import androidx.compose.foundation.layout.heightIn
+Import androidx.compose.material3.Button
+Import androidx.compose.material3.CircularProgressIndicator
+Import androidx.compose.material3.OutlinedButton
+Import androidx.compose.material3.OutlinedTextField
+Import androidx.compose.material3.Text
+Import androidx.compose.runtime.Composable
+Import androidx.compose.runtime.LaunchedEffect
+Import androidx.compose.runtime.getValue
+Import androidx.compose.runtime.mutableStateOf
+Import androidx.compose.runtime.remember
+Import androidx.compose.runtime.rememberCoroutineScope
+Import androidx.compose.runtime.setValue
+Import androidx.compose.ui.Modifier
+Import androidx.compose.ui.text.input.PasswordVisualTransformation
+Import androidx.compose.ui.unit.dp
+Import com.hai.manager.router.NativeRouterAuthBrand
+Import com.hai.manager.router.RouterAuthRepository
+Import kotlinx.coroutines.delay
+Import kotlinx.coroutines.launch
 
 @Composable
-fun InAppRouterPanel(
-    url: String,
-    onClose: () -> Unit
+Fun InAppRouterPanel(
+    Url: String,
+    OnClose: () -> Unit
 ) {
-    val scope = rememberCoroutineScope()
-    val auth = remember(url) { RouterAuthService(url) }
-    var brand by remember(url) { mutableStateOf(NativeRouterAuthBrand.UNKNOWN) }
-    var detecting by remember(url) { mutableStateOf(true) }
-    var username by remember(url) { mutableStateOf("admin") }
-    var password by remember(url) { mutableStateOf("") }
-    var busy by remember(url) { mutableStateOf(false) }
-    var message by remember(url) { mutableStateOf<String?>(null) }
+    Val scope = rememberCoroutineScope()
+    Val auth = remember(url) { RouterAuthRepository(url) }
+    Var brand by remember(url) { mutableStateOf(NativeRouterAuthBrand.UNKNOWN) }
+    Var detecting by remember(url) { mutableStateOf(true) }
+    Var username by remember(url) { mutableStateOf("admin") }
+    Var password by remember(url) { mutableStateOf("") }
+    Var busy by remember(url) { mutableStateOf(false) }
+    Var message by remember(url) { mutableStateOf<String?>(null) }
 
-    suspend fun detect() {
-        detecting = true
-        brand = runCatching { auth.detectBrand() }.getOrDefault(NativeRouterAuthBrand.UNKNOWN)
-        detecting = false
+    Suspend fun detect() {
+        Detecting = true
+        Brand = runCatching { auth.detectBrand() }.getOrDefault(NativeRouterAuthBrand.UNKNOWN)
+        Detecting = false
     }
 
     LaunchedEffect(url) { detect() }
-    BackHandler(enabled = !busy) { onClose() }
+    BackHandler(enabled =!busy) { onClose() }
 
     HaiPage(
-        title = "تسجيل الدخول",
-        subtitle = if (detecting) null else brand.displayName
+        Title = "تسجيل الدخول",
+        Subtitle = if (detecting) null else brand.displayName
     ) {
         HaiCard {
             if (detecting) {
                 CircularProgressIndicator()
             } else {
-                if (brand != NativeRouterAuthBrand.ZTE) {
+                if (brand!= NativeRouterAuthBrand.ZTE) {
                     OutlinedTextField(
-                        value = username,
-                        onValueChange = { username = it },
-                        label = { Text("اسم المستخدم") },
-                        singleLine = true,
-                        enabled = !busy,
-                        modifier = Modifier.fillMaxWidth()
+                        Value = username,
+                        OnValueChange = { username = it },
+                        Label = { Text("اسم المستخدم") },
+                        SingleLine = true,
+                        Enabled =!busy,
+                        Modifier = Modifier.fillMaxWidth()
                     )
                 }
 
                 OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("كلمة المرور") },
-                    singleLine = true,
-                    enabled = !busy,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth()
+                    Value = password,
+                    OnValueChange = { password = it },
+                    Label = { Text("كلمة المرور") },
+                    SingleLine = true,
+                    Enabled =!busy,
+                    VisualTransformation = PasswordVisualTransformation(),
+                    Modifier = Modifier.fillMaxWidth()
                 )
 
                 Button(
-                    onClick = {
-                        scope.launch {
-                            busy = true
-                            message = null
-                            val result = auth.login(username.trim(), password)
-                            busy = false
-                            brand = result.brand
+                    OnClick = {
+                        Scope.launch {
+                            Busy = true
+                            Message = null
+                            Val result = auth.login(username.trim(), password)
+                            Busy = false
+                            Brand = result.brand
                             if (result.success) {
-                                password = ""
-                                delay(250)
-                                onClose()
+                                Message = "تم تسجيل الدخول بنجاح"
                             } else {
-                                message = result.message
+                                Message = result.errorMessage ?: "فشل تسجيل الدخول"
                             }
                         }
                     },
-                    enabled = !busy && password.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
+                    Enabled =!busy,
+                    Modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
                 ) {
-                    if (busy) CircularProgressIndicator()
-                    else Text("دخول")
+                    Text("تسجيل الدخول")
                 }
 
-                message?.let { Text(it) }
+                message?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
             }
         }
 
         OutlinedButton(
-            onClick = onClose,
-            enabled = !busy,
-            modifier = Modifier.fillMaxWidth()
+            OnClick = onClose,
+            Enabled =!busy,
+            Modifier = Modifier.fillMaxWidth()
         ) { Text("رجوع") }
     }
 }
