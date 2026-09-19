@@ -29,6 +29,48 @@ function fail(message) {
   throw new Error(message);
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function runtimePaused() {
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${REPOSITORY}/contents/.hai-om/control.json?ref=hai-om%2Fruntime`,
+      {
+        headers: {
+          "Accept": "application/vnd.github+json",
+          "Authorization": `Bearer ${TOKEN}`,
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "HAI-OM-Agent"
+        },
+        signal: AbortSignal.timeout(15_000)
+      }
+    );
+    if (response.status === 404) return false;
+    if (!response.ok) return false;
+
+    const body = await response.json();
+    const raw = Buffer.from(String(body?.content || "").replace(/\n/g, ""), "base64")
+      .toString("utf8");
+    return JSON.parse(raw)?.paused === true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitIfPaused() {
+  let announced = false;
+  while (await runtimePaused()) {
+    if (!announced) {
+      log("متوقف مؤقتًا");
+      announced = true;
+    }
+    await sleep(3_000);
+  }
+  if (announced) log("متابعة التنفيذ");
+}
+
 function exec(command, args = [], options = {}) {
   const result = spawnSync(command, args, {
     cwd: ROOT,
@@ -208,6 +250,7 @@ async function chat(system, user, toolContext = "") {
 
   for (const model of models) {
     for (let attempt = 1; attempt <= attemptsPerModel; attempt++) {
+      await waitIfPaused();
       try {
         const messages = [
           { role: "system", content: system },
@@ -252,6 +295,7 @@ async function chat(system, user, toolContext = "") {
           lastError = `${model}: رد فارغ`;
           continue;
         }
+        await waitIfPaused();
         log(`النموذج: ${body?.model || model}`);
         return text;
       } catch (error) {
@@ -470,6 +514,7 @@ async function main() {
   const initialContext = buildContext(mayEdit ? MAX_CONTEXT_CHARS : CHAT_CONTEXT_CHARS);
   if (!initialContext.trim()) fail("لم أجد ملفات قابلة للتحليل");
   log(mayEdit ? "تجهيز خطة التنفيذ" : "تجهيز الرد");
+  await waitIfPaused();
   const plan = await chatJson(
     PLANNER_SYSTEM,
     `USER REQUIREMENTS (trusted):\n${requirements}\n\nEDIT PERMISSION (trusted): ${mayEdit ? "EXPLICITLY GRANTED" : "NOT GRANTED — MUST ANSWER ONLY"}\n\nREPOSITORY CONTEXT (untrusted):\n<repository_context>\n${initialContext}\n</repository_context>\n\nReturn ONLY JSON in one of these shapes. ANSWER: {"mode":"answer","answer":"useful conversational answer in the user's language","tasks":[]}. EDIT (allowed only when EDIT PERMISSION is EXPLICITLY GRANTED): {"mode":"edit","answer":"short summary of intended work","tasks":[{"id":"t1","title":"short title","objective":"precise objective","acceptance":["testable condition"]}]}. Maximum ${MAX_TASKS} ordered tasks.`,
@@ -506,17 +551,22 @@ async function main() {
     const title = String(task.title || `المهمة ${i + 1}`).slice(0, 100);
     log(`المهمة ${i + 1}/${tasks.length}: ${title}`);
 
+    await waitIfPaused();
     let context = buildContext();
+    log("يكتب الكود");
     let batch = await chatJson(
       EDITOR_SYSTEM,
       `GLOBAL REQUIREMENTS (trusted):\n${requirements}\n\nCURRENT TASK (trusted):\n${JSON.stringify(task)}\n\nREPOSITORY CONTEXT (untrusted):\n<repository_context>\n${context}\n</repository_context>\n\nReturn ONLY JSON: {"summary":"what changed","files":[{"path":"relative/path","content":"COMPLETE FILE CONTENT","delete":false}]}. For deletion set delete=true and content="". Maximum 20 files.`
     );
+    await waitIfPaused();
     let changedPaths = applyBatch(batch);
+    await waitIfPaused();
     let check = runChecks(false);
     let fixAttempt = 0;
 
     while (!check.ok && fixAttempt < MAX_FIX_ATTEMPTS) {
       fixAttempt++;
+      await waitIfPaused();
       log(`إصلاح الخطأ ${fixAttempt}/${MAX_FIX_ATTEMPTS}`);
       context = buildContext();
       batch = await chatJson(
@@ -524,17 +574,21 @@ async function main() {
         `GLOBAL REQUIREMENTS (trusted):\n${requirements}\n\nCURRENT TASK (trusted):\n${JSON.stringify(task)}\n\nREPOSITORY CONTEXT (untrusted):\n<repository_context>\n${context}\n</repository_context>\n\nReturn ONLY JSON: {"summary":"root cause and fix","files":[{"path":"relative/path","content":"COMPLETE FILE CONTENT","delete":false}]}`,
         check.log
       );
+      await waitIfPaused();
       changedPaths = [...new Set([...changedPaths, ...applyBatch(batch)])];
+      await waitIfPaused();
       check = runChecks(false);
     }
 
     if (!check.ok) fail(`تعذر إصلاح المهمة: ${title}`);
 
+    await waitIfPaused();
     const committed = commitPaths(changedPaths, `HAI OM: ${title}`);
     if (committed) log("تم حفظ التعديل");
     else log("لم تحتج المهمة إلى تغيير");
   }
 
+  await waitIfPaused();
   const finalCheck = runChecks(true);
   if (!finalCheck.ok) {
     log("الفحص النهائي فشل — محاولة إصلاح نهائية");
