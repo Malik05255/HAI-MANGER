@@ -1,7 +1,7 @@
-package com.hai.manager.router
+Package com.hai.manager.router
 
-enum class NativeRouterAuthBrand(val displayName: String) {
-    HUAWEI("Huawei"),
-    ZTE("ZTE"),
+Enum class NativeRouterAuthBrand(val displayName: String) {
+    HUAWEI("Huawei HiLink"),
+    ZTE("ZTE GoForm"),
     UNKNOWN("غير معروف")
 }
