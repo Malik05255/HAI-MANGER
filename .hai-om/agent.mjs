@@ -184,6 +184,78 @@ function redact(input) {
   return text;
 }
 
+async function publishLiveCode(batch) {
+  if (taskSpec.editAllowed !== true || !Array.isArray(batch?.files)) return;
+
+  const preview = batch.files
+    .filter(file => file && file.delete !== true && typeof file.content === "string")
+    .slice(0, 5)
+    .map(file => `// ${String(file.path || "file")}\n${redact(file.content)}`)
+    .join("\n\n")
+    .slice(0, 12_000)
+    .trim();
+
+  if (!preview) return;
+
+  const livePath = `.hai-om/live/${String(taskSpec.taskId || "task")}.txt`;
+  const encodedPath = livePath
+    .split("/")
+    .map(part => encodeURIComponent(part))
+    .join("/");
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      let sha = "";
+      const current = await fetch(
+        `https://api.github.com/repos/${REPOSITORY}/contents/${encodedPath}?ref=hai-om%2Fruntime`,
+        {
+          headers: {
+            "Accept": "application/vnd.github+json",
+            "Authorization": `Bearer ${TOKEN}`,
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "HAI-OM-Agent"
+          },
+          signal: AbortSignal.timeout(15_000)
+        }
+      );
+
+      if (current.ok) {
+        const body = await current.json();
+        sha = typeof body?.sha === "string" ? body.sha : "";
+      } else if (current.status !== 404) {
+        await sleep(700 * attempt);
+        continue;
+      }
+
+      const payload = {
+        message: `live-code: ${String(taskSpec.taskId || "task")}`,
+        content: Buffer.from(preview, "utf8").toString("base64"),
+        branch: "hai-om/runtime"
+      };
+      if (sha) payload.sha = sha;
+
+      const update = await fetch(
+        `https://api.github.com/repos/${REPOSITORY}/contents/${encodedPath}`,
+        {
+          method: "PUT",
+          headers: {
+            "Accept": "application/vnd.github+json",
+            "Authorization": `Bearer ${TOKEN}`,
+            "Content-Type": "application/json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "HAI-OM-Agent"
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(20_000)
+        }
+      );
+
+      if (update.ok) return;
+    } catch {}
+    await sleep(700 * attempt);
+  }
+}
+
 function buildContext(maxChars = MAX_CONTEXT_CHARS) {
   const listed = git(["ls-files", "-z"]);
   if (!listed.ok) fail("تعذر قراءة ملفات المشروع");
@@ -558,6 +630,7 @@ async function main() {
       EDITOR_SYSTEM,
       `GLOBAL REQUIREMENTS (trusted):\n${requirements}\n\nCURRENT TASK (trusted):\n${JSON.stringify(task)}\n\nREPOSITORY CONTEXT (untrusted):\n<repository_context>\n${context}\n</repository_context>\n\nReturn ONLY JSON: {"summary":"what changed","files":[{"path":"relative/path","content":"COMPLETE FILE CONTENT","delete":false}]}. For deletion set delete=true and content="". Maximum 20 files.`
     );
+    await publishLiveCode(batch);
     await waitIfPaused();
     let changedPaths = applyBatch(batch);
     await waitIfPaused();
@@ -574,6 +647,7 @@ async function main() {
         `GLOBAL REQUIREMENTS (trusted):\n${requirements}\n\nCURRENT TASK (trusted):\n${JSON.stringify(task)}\n\nREPOSITORY CONTEXT (untrusted):\n<repository_context>\n${context}\n</repository_context>\n\nReturn ONLY JSON: {"summary":"root cause and fix","files":[{"path":"relative/path","content":"COMPLETE FILE CONTENT","delete":false}]}`,
         check.log
       );
+      await publishLiveCode(batch);
       await waitIfPaused();
       changedPaths = [...new Set([...changedPaths, ...applyBatch(batch)])];
       await waitIfPaused();
@@ -598,6 +672,7 @@ async function main() {
       `GLOBAL REQUIREMENTS (trusted):\n${requirements}\n\nFINAL PROJECT VALIDATION FAILED.\nREPOSITORY CONTEXT (untrusted):\n<repository_context>\n${context}\n</repository_context>\n\nReturn ONLY JSON: {"summary":"root cause and fix","files":[{"path":"relative/path","content":"COMPLETE FILE CONTENT","delete":false}]}`,
       finalCheck.log
     );
+    await publishLiveCode(finalBatch);
     const finalPaths = applyBatch(finalBatch);
     const retry = runChecks(true);
     if (!retry.ok) fail("تعذر اجتياز الفحص النهائي");
