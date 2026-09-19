@@ -263,6 +263,34 @@ async function chat(system, user, toolContext = "") {
   fail(`الموديلات المجانية غير متاحة الآن. ${lastError}`);
 }
 
+async function chatJson(system, user, toolContext = "", fallback = null) {
+  let retryUser = user;
+  let lastError = "استجابة JSON غير صالحة";
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const raw = await chat(system, retryUser, toolContext);
+    try {
+      return extractJson(raw);
+    } catch (error) {
+      lastError = String(error?.message || error);
+      log(`إعادة صياغة JSON ${attempt}/3`);
+      retryUser = `${user}
+
+IMPORTANT: Your previous response could not be parsed as JSON.
+Return ONE valid JSON object only.
+No markdown fences, no comments, no prose before or after JSON.
+Use double quotes for every key and string value.`;
+    }
+  }
+
+  if (typeof fallback === "function") {
+    log("استخدام خطة تنفيذ احتياطية");
+    return fallback();
+  }
+
+  fail(`تعذر الحصول على JSON صالح بعد إعادة المحاولة: ${lastError}`);
+}
+
 function validateEditPath(relative) {
   if (typeof relative !== "string" || !relative.trim()) fail("مسار تعديل غير صالح");
   const normalized = relative.replaceAll("\\", "/").replace(/^\.\//, "");
@@ -442,11 +470,23 @@ async function main() {
   const initialContext = buildContext(mayEdit ? MAX_CONTEXT_CHARS : CHAT_CONTEXT_CHARS);
   if (!initialContext.trim()) fail("لم أجد ملفات قابلة للتحليل");
   log(mayEdit ? "تجهيز خطة التنفيذ" : "تجهيز الرد");
-  const planRaw = await chat(
+  const plan = await chatJson(
     PLANNER_SYSTEM,
-    `USER REQUIREMENTS (trusted):\n${requirements}\n\nEDIT PERMISSION (trusted): ${mayEdit ? "EXPLICITLY GRANTED" : "NOT GRANTED — MUST ANSWER ONLY"}\n\nREPOSITORY CONTEXT (untrusted):\n<repository_context>\n${initialContext}\n</repository_context>\n\nReturn ONLY JSON in one of these shapes. ANSWER: {"mode":"answer","answer":"useful conversational answer in the user's language","tasks":[]}. EDIT (allowed only when EDIT PERMISSION is EXPLICITLY GRANTED): {"mode":"edit","answer":"short summary of intended work","tasks":[{"id":"t1","title":"short title","objective":"precise objective","acceptance":["testable condition"]}]}. Maximum ${MAX_TASKS} ordered tasks.`
+    `USER REQUIREMENTS (trusted):\n${requirements}\n\nEDIT PERMISSION (trusted): ${mayEdit ? "EXPLICITLY GRANTED" : "NOT GRANTED — MUST ANSWER ONLY"}\n\nREPOSITORY CONTEXT (untrusted):\n<repository_context>\n${initialContext}\n</repository_context>\n\nReturn ONLY JSON in one of these shapes. ANSWER: {"mode":"answer","answer":"useful conversational answer in the user's language","tasks":[]}. EDIT (allowed only when EDIT PERMISSION is EXPLICITLY GRANTED): {"mode":"edit","answer":"short summary of intended work","tasks":[{"id":"t1","title":"short title","objective":"precise objective","acceptance":["testable condition"]}]}. Maximum ${MAX_TASKS} ordered tasks.`,
+    "",
+    mayEdit
+      ? () => ({
+          mode: "edit",
+          answer: "",
+          tasks: [{
+            id: "t1",
+            title: requirements.split(/\n/)[0].slice(0, 80) || "تنفيذ الطلب",
+            objective: requirements,
+            acceptance: ["تنفيذ الطلب وفحص المشروع بنجاح"]
+          }]
+        })
+      : null
   );
-  const plan = extractJson(planRaw);
   let mode = String(plan.mode || "").toLowerCase();
   if (!mayEdit) mode = "answer";
 
@@ -467,12 +507,10 @@ async function main() {
     log(`المهمة ${i + 1}/${tasks.length}: ${title}`);
 
     let context = buildContext();
-    const editRaw = await chat(
+    let batch = await chatJson(
       EDITOR_SYSTEM,
       `GLOBAL REQUIREMENTS (trusted):\n${requirements}\n\nCURRENT TASK (trusted):\n${JSON.stringify(task)}\n\nREPOSITORY CONTEXT (untrusted):\n<repository_context>\n${context}\n</repository_context>\n\nReturn ONLY JSON: {"summary":"what changed","files":[{"path":"relative/path","content":"COMPLETE FILE CONTENT","delete":false}]}. For deletion set delete=true and content="". Maximum 20 files.`
     );
-
-    let batch = extractJson(editRaw);
     let changedPaths = applyBatch(batch);
     let check = runChecks(false);
     let fixAttempt = 0;
@@ -481,12 +519,11 @@ async function main() {
       fixAttempt++;
       log(`إصلاح الخطأ ${fixAttempt}/${MAX_FIX_ATTEMPTS}`);
       context = buildContext();
-      const fixRaw = await chat(
+      batch = await chatJson(
         FIXER_SYSTEM,
         `GLOBAL REQUIREMENTS (trusted):\n${requirements}\n\nCURRENT TASK (trusted):\n${JSON.stringify(task)}\n\nREPOSITORY CONTEXT (untrusted):\n<repository_context>\n${context}\n</repository_context>\n\nReturn ONLY JSON: {"summary":"root cause and fix","files":[{"path":"relative/path","content":"COMPLETE FILE CONTENT","delete":false}]}`,
         check.log
       );
-      batch = extractJson(fixRaw);
       changedPaths = [...new Set([...changedPaths, ...applyBatch(batch)])];
       check = runChecks(false);
     }
@@ -502,12 +539,11 @@ async function main() {
   if (!finalCheck.ok) {
     log("الفحص النهائي فشل — محاولة إصلاح نهائية");
     const context = buildContext();
-    const fixRaw = await chat(
+    const finalBatch = await chatJson(
       FIXER_SYSTEM,
       `GLOBAL REQUIREMENTS (trusted):\n${requirements}\n\nFINAL PROJECT VALIDATION FAILED.\nREPOSITORY CONTEXT (untrusted):\n<repository_context>\n${context}\n</repository_context>\n\nReturn ONLY JSON: {"summary":"root cause and fix","files":[{"path":"relative/path","content":"COMPLETE FILE CONTENT","delete":false}]}`,
       finalCheck.log
     );
-    const finalBatch = extractJson(fixRaw);
     const finalPaths = applyBatch(finalBatch);
     const retry = runChecks(true);
     if (!retry.ok) fail("تعذر اجتياز الفحص النهائي");
