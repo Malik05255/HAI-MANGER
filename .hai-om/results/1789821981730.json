@@ -1,0 +1,26 @@
+{
+  "mode": "edit",
+  "answer": "Create router authentication API service with brand detection, HTTP login, and result handling. Update InAppRouterPanel to use the new API.",
+  "tasks": [
+    {
+      "id": "t1",
+      "title": "Create NativeRouterAuthBrand enum"
+    },
+    {
+      "id": "t2",
+      "title": "Create RouterAuthResult data class"
+    },
+    {
+      "id": "t3",
+      "title": "Create RouterAuthService"
+    },
+    {
+      "id": "t4",
+      "title": "Update InAppRouterPanel to use new API"
+    },
+    {
+      "id": "t5",
+      "title": "Add network security config"
+    }
+  ]
+}
