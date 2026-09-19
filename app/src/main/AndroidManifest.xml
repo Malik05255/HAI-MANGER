@@ -1,41 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+ <uses-permission android:name="android.permission.INTERNET" />
+ <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+ <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+ <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+ <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+ <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+ <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <application
-        android:allowBackup="true"
-        android:icon="@drawable/ic_hai_launcher"
-        android:roundIcon="@drawable/ic_hai_launcher"
-        android:label="HAI MANAGER"
-        android:supportsRtl="true"
-        android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.HAIManager">
-        <activity android:name=".ImeiUnlockActivity" android:exported="false" />
-        <activity android:name=".FirmwareToolsActivity" android:exported="false" />
-        <activity android:name=".SimToolsActivity" android:exported="false" />
-        <activity android:name=".WifiToolsActivity" android:exported="false" />
+ <application
+ android:allowBackup="true"
+ android:icon="@drawable/ic_hai_launcher"
+ android:roundIcon="@drawable/ic_hai_launcher"
+ android:label="HAI MANAGER"
+ android:supportsRtl="true"
+ android:networkSecurityConfig="@xml/network_security_config"
+ android:usesCleartextTraffic="true"
+ android:theme="@style/Theme.HAIManager">
+ <activity android:name=".ImeiUnlockActivity" android:exported="false" />
+ <activity android:name=".FirmwareToolsActivity" android:exported="false" />
+ <activity android:name=".SimToolsActivity" android:exported="false" />
+ <activity android:name=".WifiToolsActivity" android:exported="false" />
 
-        <receiver
-            android:name=".update.UpdateRescheduleReceiver"
-            android:enabled="true"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-            </intent-filter>
-        </receiver>
+ <receiver
+ android:name=".update.UpdateRescheduleReceiver"
+ android:enabled="true"
+ android:exported="false">
+ <intent-filter>
+ <action android:name="android.intent.action.BOOT_COMPLETED" />
+ <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+ </intent-filter>
+ </receiver>
 
-        <activity android:name=".MainActivity" android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
+ <activity android:name=".MainActivity" android:exported="true">
+ <intent-filter>
+ <action android:name="android.intent.action.MAIN" />
+ <category android:name="android.intent.category.LAUNCHER" />
+ </intent-filter>
+ </activity>
+ </application>
 </manifest>
