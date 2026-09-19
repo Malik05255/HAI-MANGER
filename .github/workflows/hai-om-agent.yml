@@ -1,0 +1,216 @@
+name: HAI OM Agent
+
+on:
+  push:
+    branches:
+      - "hai-om/runtime"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hai-om-runtime
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    if: startsWith(github.event.head_commit.message, 'agent(task):')
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+
+    steps:
+      - name: Checkout HAI OM runtime
+        uses: actions/checkout@v5
+        with:
+          # Pin this run to the exact task commit that triggered it.
+          # Using the moving runtime branch here can execute a newer task when runs queue.
+          ref: ${{ github.sha }}
+          path: runtime
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Read task
+        id: task
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="$GITHUB_WORKSPACE/runtime/.hai-om/task.json"
+          test -s "$FILE"
+          echo "task_id=$(jq -r '.taskId' "$FILE")" >> "$GITHUB_OUTPUT"
+          echo "target_branch=$(jq -r '.targetBranch' "$FILE")" >> "$GITHUB_OUTPUT"
+          echo "edit_allowed=$(jq -r '.editAllowed' "$FILE")" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout project
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.task.outputs.target_branch }}
+          path: work
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Java
+        if: steps.task.outputs.edit_allowed == 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Restore OmniRoute runtime
+        id: omni-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.hai-om/omniroute-lite
+          key: hai-om-omniroute-lite-3.8.50-v1-node22-linux
+
+      - name: Install OmniRoute runtime
+        if: steps.omni-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.hai-om/omniroute-lite"
+          npm install --prefix "$HOME/.hai-om/omniroute-lite" --omit=optional --no-fund --no-audit \
+            omniroute@3.8.50 better-sqlite3@13.0.2 js-tiktoken@1.0.20
+
+      - name: Start free AI engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.hai-om/omniroute-lite/node_modules/.bin:$PATH"
+          export OMNIROOT="$HOME/.hai-om/omniroute-lite/node_modules/omniroute"
+
+          OMNIROUTE_SERVER_HOST=127.0.0.1 nohup omniroute --no-open > "$RUNNER_TEMP/omniroute.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/omniroute.pid"
+
+          READY=0
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:20128/api/health/ping >/dev/null 2>&1; then
+              READY=1
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$READY" != "1" ]; then
+            cat "$RUNNER_TEMP/omniroute.log" || true
+            exit 1
+          fi
+
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import path from "node:path";
+          import { pathToFileURL } from "node:url";
+
+          const root = process.env.OMNIROOT;
+          const { apiFetch } = await import(pathToFileURL(path.join(root, "bin/cli/api.mjs")).href);
+          const { openOmniRouteDb } = await import(
+            pathToFileURL(path.join(root, "bin/cli/sqlite.mjs")).href
+          );
+
+          const settings = await apiFetch("/api/settings", {
+            method: "PATCH",
+            body: { freeAccessPolicy: "strict", excludeTosAvoid: false },
+            retry: false,
+          });
+          if (!settings.ok) throw new Error("Unable to enable strict free-only routing: " + settings.status);
+
+          const { db } = await openOmniRouteDb();
+          try {
+            const put = db.prepare(
+              "INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES (?, ?, ?)"
+            );
+            const compression = {
+              enabled: true,
+              defaultMode: "stacked",
+              autoTriggerMode: "stacked",
+              autoTriggerTokens: 32000,
+              stackedPipeline: [
+                { engine: "rtk", intensity: "standard" },
+                { engine: "caveman", intensity: "full" }
+              ],
+              rtkConfig: {
+                enabled: true,
+                intensity: "standard",
+                applyToToolResults: true,
+                applyToCodeBlocks: false,
+                applyToAssistantMessages: false
+              },
+              cavemanConfig: { enabled: true, intensity: "full" }
+            };
+            const tx = db.transaction(() => {
+              for (const [key, value] of Object.entries(compression)) {
+                put.run("compression", key, JSON.stringify(value));
+              }
+            });
+            tx();
+          } finally {
+            db.close();
+          }
+
+          try {
+            const tokenRes = await apiFetch("/api/dahl/tokens", { method: "POST", retry: false });
+            if (tokenRes.ok) {
+              const body = await tokenRes.json();
+              if (typeof body?.token === "string" && body.token.length > 8) {
+                fs.writeFileSync(path.join(process.env.RUNNER_TEMP, "dahl-token"), body.token, { mode: 0o600 });
+              }
+            }
+          } catch {}
+          NODE
+
+          sleep 1
+
+          if [ -s "$RUNNER_TEMP/dahl-token" ]; then
+            export HAI_DAHL_TOKEN="$(cat "$RUNNER_TEMP/dahl-token")"
+            omniroute providers add dahl \
+              --credential-env HAI_DAHL_TOKEN \
+              --yes \
+              --name hai-free-dahl \
+              --default-model MiniMaxAI/MiniMax-M2.7 || true
+            unset HAI_DAHL_TOKEN
+            rm -f "$RUNNER_TEMP/dahl-token"
+          fi
+
+      - name: Answer or program
+        working-directory: work
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HAI_OMNIROUTE_URL: http://127.0.0.1:20128
+          HAI_BRANCH: ${{ steps.task.outputs.target_branch }}
+          HAI_REPOSITORY: ${{ github.repository }}
+          HAI_TASK_PATH: ${{ github.workspace }}/runtime/.hai-om/task.json
+          HAI_RESULT_PATH: ${{ runner.temp }}/hai-om-result.json
+        run: node "$GITHUB_WORKSPACE/runtime/.hai-om/agent.mjs"
+
+      - name: Publish result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TASK_ID: ${{ steps.task.outputs.task_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="$RUNNER_TEMP/hai-om-result.json"
+          test -s "$FILE"
+          CONTENT="$(base64 -w 0 "$FILE")"
+          jq -n \
+            --arg message "runtime-result: $TASK_ID" \
+            --arg content "$CONTENT" \
+            --arg branch "hai-om/runtime" \
+            '{message:$message,content:$content,branch:$branch}' \
+            | gh api \
+                --method PUT \
+                -H "Accept: application/vnd.github+json" \
+                "/repos/$GITHUB_REPOSITORY/contents/.hai-om/results/$TASK_ID.json" \
+                --input - >/dev/null
+
+      - name: Stop AI engine
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/omniroute.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/omniroute.pid")" 2>/dev/null || true
+          fi
